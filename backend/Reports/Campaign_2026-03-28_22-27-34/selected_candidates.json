@@ -1,0 +1,42 @@
+[
+    {
+        "name": "Boot Spring",
+        "email": "rajpootashishd@gmail.com",
+        "role": "Web developer",
+        "resume_path": "/reports/Campaign_2026-03-28_22-27-34/Shortlisted_Resumes/[Gmail] ashish_resum (4).pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Strong technical skills in web development",
+                "Experience with both frontend and backend technologies",
+                "Hands-on project experience"
+            ],
+            "weaknesses": [
+                "Limited professional work experience",
+                "No direct mention of collaboration with designers"
+            ],
+            "reasoning": "The candidate has relevant skills and projects but limited professional experience.",
+            "score": 42.6,
+            "matched_skills": [
+                "HTML",
+                "CSS",
+                "JavaScript",
+                "React",
+                "Node.js",
+                "Spring Boot",
+                "REST APIs",
+                "MySQL",
+                "PostgreSQL",
+                "Supabase",
+                "MongoDB",
+                "Git",
+                "Docker",
+                "Postman",
+                "Maven",
+                "IntelliJ IDEA",
+                "Eclipse IDE",
+                "VS Code"
+            ],
+            "status": "Selected"
+        }
+    }
+]

@@ -1,0 +1,51 @@
+[
+    {
+        "name": "Ashish Rajpoot",
+        "email": "rajpootashishd@gmail.com",
+        "role": "Web Developer",
+        "resume_path": "/reports/Campaign_2026-03-31_16-35-03/Shortlisted_Resumes/[Gmail] ashish_resum (4).pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Hands-on experience with full stack development",
+                "Proficient in both frontend and backend technologies",
+                "Experience with real-time applications and secure authentication"
+            ],
+            "weaknesses": [
+                "Limited professional experience",
+                "No mention of specific achievements or awards"
+            ],
+            "reasoning": "The candidate has relevant skills and experience in web development, matching the job description.",
+            "score": 36.9,
+            "matched_skills": [
+                "Java",
+                "Spring Boot",
+                "Spring MVC",
+                "Spring Security",
+                "JWT",
+                "Hibernate",
+                "JPA",
+                "JDBC",
+                "REST APIs",
+                "Node.js",
+                "React.js",
+                "JavaScript",
+                "ES6",
+                "HTML5",
+                "CSS3",
+                "MySQL",
+                "PostgreSQL",
+                "Supabase",
+                "MongoDB",
+                "Git",
+                "GitHub",
+                "Docker",
+                "Postman",
+                "Maven",
+                "IntelliJ IDEA",
+                "Eclipse IDE",
+                "VS Code"
+            ],
+            "status": "High Potential"
+        }
+    }
+]

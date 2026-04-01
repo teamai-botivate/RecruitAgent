@@ -1,0 +1,140 @@
+[
+    {
+        "name": "Gautam Gupta",
+        "email": "gautamgupta1025@gmail.com",
+        "role": "Web Developer",
+        "resume_path": "/reports/Campaign_2026-03-31_17-15-05/Shortlisted_Resumes/[Gmail] demo-resume.pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Strong foundation in full-stack development",
+                "Experience with modern web technologies",
+                "Hands-on project experience"
+            ],
+            "weaknesses": [
+                "Limited professional work experience",
+                "No mention of open source contributions or hackathons"
+            ],
+            "reasoning": "The candidate has relevant skills and internship experience in web development, but lacks extensive professional experience.",
+            "score": 41.5,
+            "matched_skills": [
+                "ReactJS",
+                "NodeJS",
+                "ExpressJS",
+                "Flask",
+                "MongoDB",
+                "Python",
+                "Java",
+                "HTML",
+                "CSS",
+                "JavaScript",
+                "FastAPI",
+                "PostgreSQL",
+                "Machine Learning",
+                "NLP",
+                "scikit-learn",
+                "spaCy",
+                "NLTK",
+                "Git",
+                "GitHub",
+                "Jupyter Notebook",
+                "VS Code",
+                "Google Apps Script",
+                "Google Sheets API",
+                "Data Structures and Algorithms",
+                "Microsoft Office"
+            ],
+            "status": "Potential"
+        }
+    },
+    {
+        "name": "Ashish Rajpoot",
+        "email": "rajpootashishd@gmail.com",
+        "role": "Web Developer",
+        "resume_path": "/reports/Campaign_2026-03-31_17-15-05/Shortlisted_Resumes/[Gmail] ashish_resum (4).pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Strong technical skills in full stack development",
+                "Experience with modern web technologies and frameworks",
+                "Hands-on project experience"
+            ],
+            "weaknesses": [
+                "Limited professional work experience",
+                "No mention of open source contributions or hackathons"
+            ],
+            "reasoning": "The candidate has relevant skills and projects for a web developer role but limited professional experience.",
+            "score": 41.0,
+            "matched_skills": [
+                "Java",
+                "Spring Boot",
+                "Spring MVC",
+                "Spring Security",
+                "JWT",
+                "Hibernate",
+                "JPA",
+                "JDBC",
+                "REST APIs",
+                "Node.js",
+                "React.js",
+                "JavaScript",
+                "ES6",
+                "HTML5",
+                "CSS3",
+                "MySQL",
+                "PostgreSQL",
+                "Supabase",
+                "MongoDB",
+                "Git",
+                "GitHub",
+                "Docker",
+                "Postman",
+                "Maven",
+                "IntelliJ IDEA",
+                "Eclipse IDE",
+                "VS Code",
+                "System Design",
+                "DSA"
+            ],
+            "status": "Potential"
+        }
+    },
+    {
+        "name": "MIHIR SINGH NETAM",
+        "email": "mihirnetam33@gmail.com",
+        "role": "Web Developer",
+        "resume_path": "/reports/Campaign_2026-03-31_17-15-05/Shortlisted_Resumes/[Gmail] MIHIR_SINGH_NETAM_Resume.pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Strong foundation in MERN stack",
+                "Experience with microservices architecture",
+                "Hands-on project experience"
+            ],
+            "weaknesses": [
+                "No professional work experience",
+                "Limited exposure to real-world projects"
+            ],
+            "reasoning": "The candidate is a fresher with a strong foundation in relevant technologies but lacks professional experience.",
+            "score": 31.2,
+            "matched_skills": [
+                "JavaScript",
+                "Node.js",
+                "Express.js",
+                "React.js",
+                "MongoDB",
+                "RESTful API",
+                "JWT Authentication",
+                "HTML5",
+                "CSS3",
+                "Material UI",
+                "Tailwind CSS",
+                "Bootstrap",
+                "Microservices",
+                "Agile/Scrum",
+                "Docker",
+                "Git",
+                "GitHub",
+                "Postman"
+            ],
+            "status": "Potential"
+        }
+    }
+]

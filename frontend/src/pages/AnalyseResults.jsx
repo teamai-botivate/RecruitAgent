@@ -1,0 +1,340 @@
+import React, { useState, useEffect } from 'react';
+import { BarChart3, Eye, CheckSquare, FileText, ShieldAlert, Award, CheckCircle, XCircle, EyeOff, User } from 'lucide-react';
+import CandidateProfileModal from '../components/CandidateProfileModal';
+import ResponsiveDropdown from '../components/ResponsiveDropdown';
+
+const AnalyseResults = ({ navigateTo }) => {
+  const [jds, setJds] = useState([]);
+  const apiBase = window.__API_BASE || 'http://localhost:8000';
+  const [selectedJd, setSelectedJd] = useState('');
+  const [jdDetail, setJdDetail] = useState(null);
+  const [candidates, setCandidates] = useState([]);
+  const [testAnswers, setTestAnswers] = useState([]);
+  const [selectedForInterview, setSelectedForInterview] = useState([]);
+  const [interviewDate, setInterviewDate] = useState('');
+  const [interviewTime, setInterviewTime] = useState('10:00');
+  const [interviewLocation, setInterviewLocation] = useState('');
+  const [scheduling, setScheduling] = useState(false);
+  const [expandedCandidate, setExpandedCandidate] = useState(null);
+  const [showAnswerKey, setShowAnswerKey] = useState(null);
+  const [selectedCandidateModal, setSelectedCandidateModal] = useState(null);
+
+  useEffect(() => {
+    fetch('http://localhost:8000/jd/all')
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setJds(data.jds.filter(j => ['TEST_SENT', 'TEST_COMPLETED', 'RESULTS_ANALYSED'].includes(j.state)));
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedJd) return;
+    fetch(`http://localhost:8000/jd/${selectedJd}/detail`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setJdDetail(data);
+          const validatedCands = (data.candidates || []).filter(c => {
+             // 1. Only show candidates who were Shortlisted or Potential
+             const status = String(c.Status || c.status || "").toLowerCase().trim();
+             const isQualified = status === 'shortlisted' || status === 'potential' || status === 'high potential';
+             if (!isQualified) return false;
+             
+             // 2. Only show candidates who actually have a record in ScheduledTests
+             const email = String(c.Email || c.email || "").toLowerCase().trim();
+             return (data.scheduled_tests || []).some(t => {
+                const candEmail = String(t.Candidate_Email || t.Candidate_Emai || t.email || "").toLowerCase().trim();
+                return candEmail === email;
+             });
+          });
+          
+          const cands = validatedCands.map(c => {
+            const email = String(c.Email || c.email || "").toLowerCase().trim();
+            const assessment = (data.scheduled_tests || []).find(t => 
+               String(t.Candidate_Email || t.Candidate_Emai || t.email || "").toLowerCase().trim() === email
+            );
+            return { ...c, test_status: assessment?.Status || 'Pending', test_token: assessment?.Token || '' };
+          });
+          setCandidates(cands);
+        }
+      });
+    // Fetch test answers
+    fetch(`http://localhost:8000/jd/${selectedJd}/candidates`)
+      .then(res => res.json())
+      .then(() => {
+        // Also fetch test answers from the detail endpoint (already included)
+      });
+  }, [selectedJd]);
+
+  // Fetch TestAnswers for a specific candidate
+  const fetchAnswerKey = async (email) => {
+    if (showAnswerKey === email) { setShowAnswerKey(null); return; }
+    try {
+      const resp = await fetch(`http://localhost:8000/test/answers/${selectedJd}/${email}`);
+      const data = await resp.json();
+      
+      const answers = [];
+      if (data.status === 'success') {
+        (data.mcq_answers || []).forEach(a => answers.push(a));
+        (data.coding_answers || []).forEach(a => answers.push(a));
+      }
+      setTestAnswers(answers);
+      setShowAnswerKey(email);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const toggleForInterview = (email) => {
+    setSelectedForInterview(prev =>
+      prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]
+    );
+  };
+
+  const handleScheduleInterview = async () => {
+    if (selectedForInterview.length === 0) return alert("Select candidates first");
+    if (!interviewDate) return alert("Set interview date");
+    
+    setScheduling(true);
+    const selected = candidates.filter(c => selectedForInterview.includes(c.Email));
+    const jdData = jds.find(j => j.jd_id === selectedJd);
+    
+    try {
+      await fetch(`http://localhost:8000/jd/${selectedJd}/schedule_interview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidates: selected.map(c => ({ 
+            email: c.Email, 
+            name: c.Name, 
+            score: c.Score,
+            Matched_Skills: c.Matched_Skills,
+            AI_Reasoning: c.AI_Reasoning,
+            Drive_URL: c.Report_Path || c.Drive_URL 
+          })),
+          date: interviewDate,
+          time: interviewTime,
+          location: interviewLocation,
+          job_title: jdData?.title || '',
+          interviewer: ''
+        })
+      });
+      
+      alert(`✅ Interviews scheduled for ${selectedForInterview.length} candidates!`);
+      if (navigateTo) navigateTo('interviews');
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  const campaignOptions = [
+    { value: '', label: '-- Select JD with test results --' },
+    ...jds.map((jd) => ({
+      value: jd.jd_id,
+      label: `${jd.title} (${jd.jd_id})`,
+      fullLabel: `${jd.title} (${jd.jd_id})`
+    }))
+  ];
+
+  return (
+    <div className="animate-fade-in" style={{ maxWidth: '1100px', margin: '0 auto' }}>
+      <header style={{ marginBottom: '32px' }}>
+        <h1>Analyse Test Results</h1>
+        <p>Review candidate performance, answer keys, AI analysis, and select finalists for interview.</p>
+      </header>
+
+      <div className="card glass-panel" style={{ marginBottom: '24px' }}>
+        <div className="card-header">
+          <h2 className="card-title"><BarChart3 size={20} color="var(--accent)" /> Select Campaign</h2>
+        </div>
+        <ResponsiveDropdown value={selectedJd} onChange={setSelectedJd} options={campaignOptions} />
+      </div>
+
+      {candidates.length > 0 && (
+        <>
+          {/* Stats Summary */}
+          <div className="grid-3" style={{ marginBottom: '24px' }}>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary)' }}><FileText size={24} /></div>
+              <div className="stat-content"><h3>Total Tested</h3><p>{candidates.length}</p></div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.1)', color: 'var(--success)' }}><Award size={24} /></div>
+              <div className="stat-content"><h3>Selected for Interview</h3><p>{selectedForInterview.length}</p></div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }}><ShieldAlert size={24} /></div>
+              <div className="stat-content"><h3>Flagged</h3><p>{candidates.filter(c => c.test_status === 'Suspicious').length}</p></div>
+            </div>
+          </div>
+
+          {/* Candidate Results Cards */}
+          {candidates.map((cand, idx) => (
+            <div key={idx} className="card" style={{ marginBottom: '16px', border: selectedForInterview.includes(cand.Email) ? '1px solid var(--primary)' : '1px solid var(--border-light)', transition: 'border 0.2s' }}>
+              <div className="resp-candidate-row" style={{ padding: '20px', display: 'flex', alignItems: 'flex-start', gap: '15px', flexWrap: 'wrap' }}>
+                <input type="checkbox" checked={selectedForInterview.includes(cand.Email)}
+                  onChange={() => toggleForInterview(cand.Email)}
+                  style={{ width: '20px', height: '20px', accentColor: 'var(--primary)', cursor: 'pointer', marginTop: '4px', flexShrink: 0 }} />
+                
+                <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                  <h3 style={{ margin: '0 0 4px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {cand.Name}
+                    <span className={`badge ${cand.Status === 'Shortlisted' ? 'badge-success' : 'badge-warning'}`}>{cand.Status}</span>
+                    {cand.test_status === 'Suspicious' && <span className="badge badge-danger">⚠ Suspicious</span>}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cand.Email}</p>
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                    {cand.Matched_Skills?.split(',').slice(0, 5).map((s, si) => (
+                      <span key={si} style={{ fontSize: '0.7rem', padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', border: '1px solid var(--border-light)' }}>{s.trim()}</span>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>ATS Score</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: parseFloat(cand.Score) >= 50 ? 'var(--success)' : 'var(--danger)' }}>{cand.Score}</div>
+                  </div>
+                  <button className="btn btn-outline" onClick={() => setExpandedCandidate(expandedCandidate === idx ? null : idx)} style={{ padding: '6px 10px' }}>
+                    <Eye size={16} /> {expandedCandidate === idx ? 'Hide' : 'Details'}
+                  </button>
+                  <button className="btn btn-outline" onClick={() => fetchAnswerKey(cand.Email)} 
+                    style={{ padding: '6px 10px', borderColor: showAnswerKey === cand.Email ? 'var(--accent)' : undefined, color: showAnswerKey === cand.Email ? 'var(--accent)' : undefined }}>
+                    {showAnswerKey === cand.Email ? <EyeOff size={16} /> : <CheckSquare size={16} />}
+                    {showAnswerKey === cand.Email ? 'Hide Keys' : 'Answer Key'}
+                  </button>
+                  <button className="btn btn-outline" onClick={() => setSelectedCandidateModal(cand)} style={{ padding: '6px 10px', color: 'var(--primary)', borderColor: 'var(--primary)' }}>
+                    <User size={16} /> View Profile
+                  </button>
+                </div>
+              </div>
+
+              {/* Expanded Detail */}
+              {expandedCandidate === idx && (
+                <div className="animate-fade-in" style={{ padding: '0 20px 20px', borderTop: '1px solid var(--border-light)' }}>
+                  <div className="grid-2" style={{ marginTop: '15px' }}>
+                    <div style={{ background: 'var(--bg-input)', padding: '15px', borderRadius: '8px' }}>
+                      <h4 style={{ color: 'var(--accent)', marginBottom: '10px' }}>AI Reasoning</h4>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>{cand.AI_Reasoning || 'No AI analysis available'}</p>
+                    </div>
+                    <div style={{ background: 'var(--bg-input)', padding: '15px', borderRadius: '8px' }}>
+                      <h4 style={{ color: 'var(--success)', marginBottom: '10px' }}>Matched Skills</h4>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{cand.Matched_Skills || 'None'}</p>
+                      <h4 style={{ color: 'var(--warning)', marginTop: '15px', marginBottom: '10px' }}>Proctoring Status</h4>
+                      <span className={`badge ${cand.test_status === 'Suspicious' ? 'badge-danger' : 'badge-success'}`}>
+                        {cand.test_status || 'Not Tested'}
+                      </span>
+                      {cand.Report_Path && (
+                        <div style={{ marginTop: '15px' }}>
+                          <h4 style={{ color: 'var(--primary)', marginBottom: '6px' }}>Resume</h4>
+                          <a href={`${apiBase}${cand.Report_Path}`} target="_blank" rel="noopener noreferrer"
+                            style={{ color: 'var(--accent)', fontSize: '0.85rem' }}>📄 View Resume PDF</a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Answer Key Comparison */}
+              {showAnswerKey === cand.Email && testAnswers.length > 0 && (
+                <div className="animate-fade-in" style={{ padding: '0 20px 20px', borderTop: '1px solid var(--border-light)' }}>
+                  <h4 style={{ color: 'var(--accent)', margin: '15px 0 10px' }}>Answer Key Comparison</h4>
+                  <div className="table-wrapper">
+                    <table className="table stack-mobile" style={{ fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Type</th>
+                          <th>Question</th>
+                          <th>Candidate Answer</th>
+                          <th>Correct Answer</th>
+                          <th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {testAnswers.map((a, ai) => (
+                          <tr key={ai} style={{ background: a.isCorrect === true ? 'rgba(16,185,129,0.05)' : a.isCorrect === false ? 'rgba(239,68,68,0.05)' : 'transparent' }}>
+                            <td data-label="#">{a.qNo}</td>
+                            <td data-label="Type"><span className={`badge ${a.type === 'MCQ' ? 'badge-primary' : 'badge-warning'}`}>{a.type}</span></td>
+                            <td data-label="Question" style={{ maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.question}</td>
+                            <td data-label="Candidate" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.candidate || '—'}</td>
+                            <td data-label="Correct" style={{ color: 'var(--success)' }}>{a.correct || '—'}</td>
+                            <td data-label="Result">
+                              {a.isCorrect === true ? <CheckCircle size={18} color="var(--success)" /> :
+                               a.isCorrect === false ? <XCircle size={18} color="var(--danger)" /> :
+                               <span style={{ color: 'var(--text-muted)' }}>Manual</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '10px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    ✅ Correct: {testAnswers.filter(a => a.isCorrect === true).length} / {testAnswers.filter(a => a.type === 'MCQ').length} MCQs
+                  </div>
+                </div>
+              )}
+
+              {showAnswerKey === cand.Email && testAnswers.length === 0 && (
+                <div style={{ padding: '15px 20px', color: 'var(--text-muted)', fontSize: '0.85rem', borderTop: '1px solid var(--border-light)' }}>
+                  No test submissions found for this candidate yet.
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Schedule Interview Block */}
+          {selectedForInterview.length > 0 && (
+            <div className="card" style={{ marginTop: '30px', border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.03)' }}>
+              <div className="card-header">
+                <h2 className="card-title">Schedule Interviews ({selectedForInterview.length} selected)</h2>
+              </div>
+              <div className="grid-3" style={{ padding: '0 20px' }}>
+                <div className="form-group">
+                  <label className="form-label">Interview Date</label>
+                  <input type="date" className="form-control" value={interviewDate} onChange={e => setInterviewDate(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Interview Time</label>
+                  <input type="time" className="form-control" value={interviewTime} onChange={e => setInterviewTime(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Location / Meet Link</label>
+                  <input type="text" className="form-control" value={interviewLocation} onChange={e => setInterviewLocation(e.target.value)} placeholder="Office / Google Meet link" />
+                </div>
+              </div>
+              <div style={{ padding: '20px', textAlign: 'center' }}>
+                <button className="btn btn-primary" onClick={handleScheduleInterview} disabled={scheduling}
+                  style={{ padding: '14px 28px', fontSize: '1.05rem', fontWeight: 600, width: '100%', maxWidth: '500px' }}>
+                  {scheduling ? 'Scheduling...' : `Schedule Interview & Send Invitations (${selectedForInterview.length})`}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {candidates.length === 0 && selectedJd && (
+        <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          No test results found yet. Tests may still be in progress.
+        </div>
+      )}
+
+      {/* Universal Candidate Modal */}
+      {selectedCandidateModal && (
+        <CandidateProfileModal 
+          candidate={selectedCandidateModal} 
+          jdId={selectedJd} 
+          onClose={() => setSelectedCandidateModal(null)} 
+        />
+      )}
+    </div>
+  );
+};
+
+export default AnalyseResults;

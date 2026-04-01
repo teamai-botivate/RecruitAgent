@@ -1,0 +1,86 @@
+[
+    {
+        "name": "Gautam Gupta",
+        "email": "gautamgupta1025@gmail.com",
+        "role": "Web Developer",
+        "resume_path": "/reports/Campaign_2026-04-01_10-53-18/Shortlisted_Resumes/[Gmail] demo-resume.pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Strong technical skills in ReactJS and NodeJS",
+                "Experience with full-stack development",
+                "Knowledge of machine learning and NLP"
+            ],
+            "weaknesses": [
+                "Limited professional experience",
+                "No mention of collaboration with designers"
+            ],
+            "reasoning": "The candidate has relevant skills and internship experience but lacks extensive professional experience.",
+            "score": 46.1,
+            "matched_skills": [
+                "HTML",
+                "CSS",
+                "JavaScript",
+                "ReactJS",
+                "NodeJS",
+                "ExpressJS",
+                "Flask",
+                "MongoDB",
+                "PostgreSQL",
+                "Python",
+                "TypeScript",
+                "Google Apps Script",
+                "Git",
+                "GitHub",
+                "Jupyter Notebook",
+                "VS Code",
+                "Machine Learning",
+                "NLP",
+                "Scikit-learn",
+                "SpaCy",
+                "NLTK"
+            ],
+            "status": "Potential"
+        }
+    },
+    {
+        "name": "Boot Spring",
+        "email": "rajpootashishd@gmail.com",
+        "role": "Web Developer",
+        "resume_path": "/reports/Campaign_2026-04-01_10-53-18/Shortlisted_Resumes/[Gmail] ashish_resum (4).pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Strong technical skills in relevant technologies",
+                "Experience with real-time applications and secure authentication"
+            ],
+            "weaknesses": [
+                "Limited professional experience",
+                "No direct mention of collaboration with designers"
+            ],
+            "reasoning": "The candidate has relevant skills and projects but limited professional experience.",
+            "score": 43.9,
+            "matched_skills": [
+                "HTML",
+                "CSS",
+                "JavaScript",
+                "React",
+                "Node.js",
+                "Spring Boot",
+                "REST APIs",
+                "MySQL",
+                "PostgreSQL",
+                "Supabase",
+                "MongoDB",
+                "Git",
+                "Docker",
+                "Postman",
+                "Maven",
+                "IntelliJ IDEA",
+                "Eclipse IDE",
+                "VS Code",
+                "System Design",
+                "DSA"
+            ],
+            "status": "Potential"
+        }
+    }
+]

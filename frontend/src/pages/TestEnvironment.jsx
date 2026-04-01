@@ -1,0 +1,780 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, Clock, AlertTriangle, Code, CheckCircle, Monitor, Play, ChevronLeft, ChevronRight, Flag, Send, BookOpen, Terminal, Loader } from 'lucide-react';
+
+const TestEnvironment = () => {
+  const apiBase = window.__API_BASE || 'http://localhost:8000';
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token') || '';
+
+  const [phase, setPhase] = useState('verify');
+  const [testData, setTestData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  const videoRef = useRef(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+
+  const [timeLeft, setTimeLeft] = useState(3600);
+  const timerRef = useRef(null);
+
+  const [tabSwitches, setTabSwitches] = useState(0);
+  const [fullscreenExits, setFullscreenExits] = useState(0);
+  const [cameraDenied, setCameraDenied] = useState(0);
+  const [warnings, setWarnings] = useState([]);
+  const [proctoringEvents, setProctoringEvents] = useState([]);
+
+  const [mcqAnswers, setMcqAnswers] = useState({});
+  const [codingAnswers, setCodingAnswers] = useState({});
+  const [codingLanguages, setCodingLanguages] = useState({});
+  const [codeResults, setCodeResults] = useState({});
+  const [runningCode, setRunningCode] = useState({});
+  const [flaggedQuestions, setFlaggedQuestions] = useState({});
+
+  const [currentSection, setCurrentSection] = useState('mcq');
+  const [currentQ, setCurrentQ] = useState(0);
+  const [email, setEmail] = useState('');
+  const [verifiedEmail, setVerifiedEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  const recordProctorEvent = (eventType, severity, details) => {
+    setProctoringEvents(prev => ([
+      ...prev,
+      {
+        event_type: eventType,
+        severity,
+        details,
+        event_time: new Date().toISOString(),
+      }
+    ]));
+  };
+
+  // Mobile check
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Fetch test data
+  useEffect(() => {
+    if (!token) { setLoading(false); return; }
+    fetch(`${apiBase}/test/get-assessment/${token}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.detail) { setLoading(false); return; }
+        setTestData(data);
+        setTimeLeft((data.duration_minutes || 60) * 60);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [token, apiBase]);
+
+  // Tab switch and fullscreen detection
+  useEffect(() => {
+    if (phase !== 'test') return;
+    const visibilityHandler = () => {
+      if (document.hidden) {
+        setTabSwitches(prev => {
+          const n = prev + 1;
+          setWarnings(w => [...w, `⚠️ Tab switch #${n} at ${new Date().toLocaleTimeString()}`]);
+          recordProctorEvent('tab_switch', 'medium', `Tab switch #${n}`);
+          return n;
+        });
+      }
+    };
+    
+    const fullscreenHandler = () => {
+      if (!document.fullscreenElement) {
+        setTabSwitches(prev => {
+          const n = prev + 1;
+          setWarnings(w => [...w, `⚠️ Exited Fullscreen: Warning #${n} at ${new Date().toLocaleTimeString()}`]);
+          setFullscreenExits(fs => fs + 1);
+          recordProctorEvent('fullscreen_exit', 'high', `Fullscreen exited (warning #${n})`);
+          return n;
+        });
+        alert('⚠️ You exited fullscreen. This is recorded as a proctoring violation. Please return to fullscreen immediately.');
+      }
+    };
+
+    document.addEventListener('visibilitychange', visibilityHandler);
+    document.addEventListener('fullscreenchange', fullscreenHandler);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', visibilityHandler);
+      document.removeEventListener('fullscreenchange', fullscreenHandler);
+    };
+  }, [phase]);
+
+  // Timer
+  useEffect(() => {
+    if (phase !== 'test') return;
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) { clearInterval(timerRef.current); handleAutoSubmit(); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [phase]);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setCameraActive(true);
+      setCameraError('');
+      recordProctorEvent('camera_enabled', 'info', 'Candidate granted webcam access');
+    } catch (e) {
+      setCameraError('Camera access denied. Camera is required to proceed.');
+      setCameraDenied(prev => prev + 1);
+      recordProctorEvent('camera_denied', 'critical', 'Candidate denied webcam access');
+    }
+  };
+
+  const handleStartTest = async () => {
+    if (!email) return alert('Please enter your email to begin');
+
+    setStarting(true);
+    const enteredEmail = String(email || '').trim();
+
+    try {
+      const verifyResp = await fetch(`${apiBase}/test/verify-candidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, email: enteredEmail }),
+      });
+
+      const verifyData = await verifyResp.json();
+      if (!verifyResp.ok) {
+        throw new Error(verifyData.detail || 'This email is not authorized for this test link');
+      }
+
+      const canonical = verifyData.canonical_email || enteredEmail.toLowerCase();
+      setVerifiedEmail(canonical);
+      setEmail(canonical);
+    } catch (e) {
+      alert(e.message || 'Verification failed. Please check your email and test link.');
+      setStarting(false);
+      return;
+    }
+
+    await startCamera();
+    try {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (e) {
+      console.warn("Fullscreen request failed", e);
+    }
+    setPhase('test');
+    setStarting(false);
+  };
+
+  const formatTime = (s) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const handleMcqAnswer = (qIdx, answer) => setMcqAnswers(prev => ({ ...prev, [qIdx]: answer }));
+  const handleCodingAnswer = (qIdx, code) => setCodingAnswers(prev => ({ ...prev, [qIdx]: code }));
+  const handleLanguageChange = (qIdx, lang) => setCodingLanguages(prev => ({ ...prev, [qIdx]: lang }));
+  const toggleFlag = (key) => setFlaggedQuestions(prev => ({ ...prev, [key]: !prev[key] }));
+
+  // Run code against test cases
+  const handleRunCode = async (qIdx) => {
+    const cq = codingQs[qIdx];
+    const code = codingAnswers[qIdx] || '';
+    const lang = codingLanguages[qIdx] || 'python';
+
+    if (!code.trim()) return alert('Write some code first!');
+
+    setRunningCode(prev => ({ ...prev, [qIdx]: true }));
+    try {
+      const resp = await fetch(`${apiBase}/test/run-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          problem_text: `${cq.title}\n${cq.description}\nConstraints: ${cq.constraints || ''}`,
+          code,
+          language: lang,
+          test_cases: cq.test_cases || [],
+        })
+      });
+      const result = await resp.json();
+      setCodeResults(prev => ({ ...prev, [qIdx]: result }));
+    } catch (e) {
+      setCodeResults(prev => ({ ...prev, [qIdx]: { error: e.message, results: [], passed_count: 0, total_count: (cq.test_cases || []).length } }));
+    } finally {
+      setRunningCode(prev => ({ ...prev, [qIdx]: false }));
+    }
+  };
+
+  const calculateScore = () => {
+    let mcqScore = 0;
+    (testData?.mcqs || []).forEach((q, i) => {
+      if (mcqAnswers[i] === q.answer) mcqScore++;
+    });
+    const codingScore = Object.values(codeResults).reduce((sum, r) => sum + (r.passed_count || 0), 0);
+    const codingTotal = (testData?.coding || []).reduce((sum, q) => sum + (q.test_cases?.length || 0), 0);
+    return { mcqScore, mcqTotal: (testData?.mcqs || []).length, codingScore, codingTotal };
+  };
+
+  const submitTest = async () => {
+    setSubmitting(true);
+
+    const finalCodeResults = { ...codeResults };
+    let didUpdate = false;
+    for (let i = 0; i < codingQs.length; i++) {
+        if (!finalCodeResults[i]) {
+            const code = codingAnswers[i] || '';
+            const lang = codingLanguages[i] || 'python';
+            const cq = codingQs[i];
+            if (code.trim()) {
+                try {
+                    const resp = await fetch(`${apiBase}/test/run-code`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            problem_text: `${cq.title}\n${cq.description}\nConstraints: ${cq.constraints || ''}`,
+                            code, language: lang, test_cases: cq.test_cases || [],
+                        })
+                    });
+                    finalCodeResults[i] = await resp.json();
+                    didUpdate = true;
+                } catch(e) {}
+            }
+        }
+    }
+    if (didUpdate) setCodeResults(finalCodeResults);
+
+    let mcqScore = 0;
+    (testData?.mcqs || []).forEach((q, i) => { if (mcqAnswers[i] === q.answer) mcqScore++; });
+    const codingScore = Object.values(finalCodeResults).reduce((sum, r) => sum + (r.passed_count || 0), 0);
+    const codingTotal = (testData?.coding || []).reduce((sum, q) => sum + (q.test_cases?.length || 0), 0);
+    const scores = { mcqScore, mcqTotal: (testData?.mcqs || []).length, codingScore, codingTotal };
+
+    const mcqAnswerDetails = (testData?.mcqs || []).map((q, i) => ({
+      question: q.question, selected: mcqAnswers[i] || 'Not Answered',
+      correct: q.answer, is_correct: mcqAnswers[i] === q.answer,
+      explanation: q.explanation || 'No explanation provided.'
+    }));
+    const codingAnswerDetails = (testData?.coding || []).map((q, i) => ({
+      title: q.title, code: codingAnswers[i] || '', language: codingLanguages[i] || 'python',
+      results: finalCodeResults[i] || { success: false, feedback: 'Not evaluated', results: [] },
+    }));
+
+
+    try {
+      await fetch(`${apiBase}/test/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token, email: verifiedEmail || email,
+          mcq_score: scores.mcqScore, mcq_total: scores.mcqTotal,
+          coding_score: scores.codingScore, coding_total: scores.codingTotal,
+          suspicious: (tabSwitches >= 3 || fullscreenExits >= 2 || cameraDenied > 0) ? 'Suspicious' : 'Normal',
+          proctoring_summary: {
+            tab_switches: tabSwitches,
+            fullscreen_exits: fullscreenExits,
+            camera_denied: cameraDenied,
+            event_count: proctoringEvents.length,
+          },
+          proctoring_events: proctoringEvents,
+          mcq_answers: mcqAnswerDetails, coding_answers: codingAnswerDetails,
+        })
+      });
+      setPhase('submitted');
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch (e) {
+      alert('Submission error. Please try again.');
+    } finally {
+      setSubmitting(false);
+      if (videoRef.current?.srcObject) videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      clearInterval(timerRef.current);
+    }
+  };
+
+  const handleAutoSubmit = () => { alert('⏰ Time is up! Auto-submitting.'); submitTest(); };
+  const handleManualSubmit = () => { if (window.confirm('Submit your test? You cannot change answers after.')) submitTest(); };
+
+  // ── MOBILE BLOCK ──
+  if (isMobile) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', padding: '40px', textAlign: 'center' }}>
+        <Monitor size={80} color="#ef4444" style={{ marginBottom: '20px' }} />
+        <h1 style={{ color: '#ef4444', marginBottom: '16px' }}>Desktop Required</h1>
+        <p style={{ color: '#94a3b8', maxWidth: '400px', lineHeight: 1.6 }}>This assessment must be taken on a desktop or laptop with a webcam. Mobile devices are not permitted.</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc' }}>
+        <div style={{ textAlign: 'center' }}>
+          <Loader size={40} color="#6366f1" style={{ animation: 'spin 1s linear infinite' }} />
+          <p style={{ marginTop: '16px', color: '#94a3b8' }}>Loading assessment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!token || !testData || !testData.mcqs) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', textAlign: 'center' }}>
+        <AlertTriangle size={60} color="#f59e0b" style={{ marginBottom: '20px' }} />
+        <h1 style={{ marginBottom: '10px' }}>Invalid Assessment Link</h1>
+        <p style={{ color: '#94a3b8' }}>This test link is invalid or has expired. Contact your recruiter.</p>
+      </div>
+    );
+  }
+
+  // ── SUBMITTED ──
+  if (phase === 'submitted') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', textAlign: 'center', padding: '40px' }}>
+        <div style={{ background: '#111827', borderRadius: '20px', padding: '50px', maxWidth: '500px', border: '1px solid rgba(16,185,129,0.3)' }}>
+          <CheckCircle size={80} color="#10b981" style={{ marginBottom: '20px' }} />
+          <h1 style={{ color: '#10b981', marginBottom: '12px', fontSize: '1.8rem' }}>Test Submitted!</h1>
+          <p style={{ color: '#94a3b8', lineHeight: 1.6, marginBottom: '24px' }}>
+            Your answers have been recorded successfully. The hiring team at <strong style={{ color: '#f8fafc' }}>{testData.company_name || 'the company'}</strong> will review your results.
+          </p>
+          <div style={{ background: '#1e293b', borderRadius: '10px', padding: '16px', textAlign: 'left' }}>
+            <p style={{ margin: '0 0 6px', fontSize: '0.85rem', color: '#64748b' }}>📧 Submitted as: <span style={{ color: '#f8fafc' }}>{email}</span></p>
+            <p style={{ margin: '0', fontSize: '0.85rem', color: '#64748b' }}>🕐 Submitted at: <span style={{ color: '#f8fafc' }}>{new Date().toLocaleString()}</span></p>
+          </div>
+          <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '20px' }}>You may close this window now.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── VERIFICATION (Pre-Test Screen) ──
+  if (phase === 'verify') {
+    const mcqCount = testData.mcqs?.length || 0;
+    const codingCount = testData.coding?.length || 0;
+    const duration = testData.duration_minutes || 60;
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', padding: '20px' }}>
+        <div style={{ background: '#111827', borderRadius: '20px', padding: '40px', maxWidth: '700px', width: '100%', border: '1px solid rgba(255,255,255,0.06)' }}>
+          
+          {/* Header */}
+          <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+            {testData.company_name && (
+              <div style={{ background: 'linear-gradient(135deg, #6366f1, #0ea5e9)', padding: '12px 24px', borderRadius: '10px', display: 'inline-block', marginBottom: '16px' }}>
+                <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 700 }}>{testData.company_name}</h2>
+              </div>
+            )}
+            <h1 style={{ margin: '0 0 8px', fontSize: '1.6rem' }}>Technical Assessment</h1>
+            <p style={{ margin: 0, color: '#6366f1', fontWeight: 600, fontSize: '1.1rem' }}>{testData.job_title}</p>
+          </div>
+
+          {/* Test Structure Table */}
+          <div style={{ background: '#1e293b', borderRadius: '12px', overflow: 'hidden', marginBottom: '24px' }}>
+            <div style={{ background: '#334155', padding: '12px 20px' }}>
+              <h3 style={{ margin: 0, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94a3b8' }}>Assessment Structure</h3>
+            </div>
+            <div style={{ padding: '4px 20px' }}>
+              <table style={{ width: '100%', fontSize: '0.95rem' }}>
+                <tbody>
+                  {testData.test_date && testData.test_date !== 'Immediate' && (
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '12px 0', color: '#94a3b8' }}>📅 Date</td>
+                      <td style={{ padding: '12px 0', fontWeight: 600, textAlign: 'right' }}>{testData.test_date}</td>
+                    </tr>
+                  )}
+                  <tr style={{ borderBottom: '1px solid #334155' }}>
+                    <td style={{ padding: '12px 0', color: '#94a3b8' }}>⏱️ Duration</td>
+                    <td style={{ padding: '12px 0', fontWeight: 600, textAlign: 'right' }}>{duration} Minutes</td>
+                  </tr>
+                  {mcqCount > 0 && (
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '12px 0', color: '#94a3b8' }}>📝 MCQ Questions</td>
+                      <td style={{ padding: '12px 0', fontWeight: 600, textAlign: 'right' }}>{mcqCount}</td>
+                    </tr>
+                  )}
+                  {codingCount > 0 && (
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '12px 0', color: '#94a3b8' }}>💻 Coding Challenges</td>
+                      <td style={{ padding: '12px 0', fontWeight: 600, textAlign: 'right' }}>{codingCount}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td style={{ padding: '12px 0', color: '#94a3b8' }}>🖥️ Environment</td>
+                    <td style={{ padding: '12px 0', fontWeight: 600, textAlign: 'right' }}>Online Proctored</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Rules */}
+          <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+            <h3 style={{ margin: '0 0 14px', color: '#f59e0b', fontSize: '0.95rem' }}>⚠️ Rules & Regulations</h3>
+            <ul style={{ margin: 0, paddingLeft: '20px', color: '#fbbf24', fontSize: '0.88rem', lineHeight: 2 }}>
+              <li>Your <strong>webcam must remain active</strong> throughout the entire test</li>
+              <li>Tab switching will be <strong>detected and flagged</strong> — 3+ switches mark you as suspicious</li>
+              <li>The test will <strong>auto-submit</strong> when the timer reaches zero</li>
+              <li>You <strong>must use a desktop/laptop</strong> — mobiles and tablets are blocked</li>
+              <li>No external help, reference materials, or browser extensions</li>
+              <li>Do not copy-paste from outside sources</li>
+              <li>Ensure a <strong>stable internet connection</strong> before starting</li>
+              <li>Once started, you <strong>cannot pause or restart</strong> the test</li>
+            </ul>
+          </div>
+
+          {/* Email Input */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '8px' }}>Your Email Address</label>
+            <input type="email" value={email} onChange={e => { setEmail(e.target.value); setVerifiedEmail(''); }}
+              placeholder="Enter the email you applied with"
+              style={{ width: '100%', padding: '14px 18px', background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#f8fafc', fontSize: '1rem' }} />
+          </div>
+
+          {cameraError && <p style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '12px' }}>{cameraError}</p>}
+
+          <button onClick={handleStartTest} disabled={starting}
+            style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #6366f1, #0ea5e9)', border: 'none', borderRadius: '10px', color: 'white', fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.5px' }}>
+            <Camera size={20} style={{ verticalAlign: 'middle', marginRight: '10px' }} />
+            {starting ? 'Verifying Candidate...' : 'Enable Camera & Start Test'}
+          </button>
+
+          <p style={{ textAlign: 'center', color: '#475569', fontSize: '0.75rem', marginTop: '16px' }}>
+            By clicking above, you agree to the proctoring terms and grant camera access.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN TEST UI ──
+  const mcqs = testData?.mcqs || [];
+  const codingQs = testData?.coding || [];
+  const totalAnswered = Object.keys(mcqAnswers).length + Object.keys(codingAnswers).filter(k => codingAnswers[k]?.trim()).length;
+  const totalQuestions = mcqs.length + codingQs.length;
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc' }}>
+      
+      {/* ── LEFT SIDEBAR ── */}
+      <div style={{ width: '260px', background: '#111827', borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 10 }}>
+        
+        {/* Camera */}
+        <div style={{ padding: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <video ref={videoRef} autoPlay muted playsInline
+            style={{ width: '100%', borderRadius: '8px', background: '#000', aspectRatio: '4/3', objectFit: 'cover' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '0.75rem' }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: cameraActive ? '#10b981' : '#ef4444', boxShadow: cameraActive ? '0 0 6px #10b981' : 'none' }}></div>
+            <span style={{ color: cameraActive ? '#10b981' : '#ef4444' }}>{cameraActive ? 'Recording' : 'Camera Off'}</span>
+          </div>
+        </div>
+
+        {/* Timer */}
+        <div style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1.5px', marginBottom: '4px' }}>Time Remaining</div>
+          <div style={{
+            fontSize: '2rem', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '2px',
+            color: timeLeft < 300 ? '#ef4444' : timeLeft < 600 ? '#f59e0b' : '#10b981',
+            textShadow: timeLeft < 300 ? '0 0 10px rgba(239,68,68,0.5)' : 'none',
+          }}>
+            {formatTime(timeLeft)}
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b', marginBottom: '6px' }}>
+            <span>Progress</span>
+            <span>{totalAnswered}/{totalQuestions}</span>
+          </div>
+          <div style={{ height: '4px', background: '#1e293b', borderRadius: '2px' }}>
+            <div style={{ width: `${totalQuestions > 0 ? (totalAnswered / totalQuestions) * 100 : 0}%`, height: '100%', background: 'linear-gradient(90deg, #6366f1, #10b981)', borderRadius: '2px', transition: 'width 0.3s' }}></div>
+          </div>
+        </div>
+
+        {/* Question Navigator */}
+        <div style={{ padding: '12px', flex: 1, overflowY: 'auto' }}>
+          <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>Questions</div>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            {mcqs.map((_, i) => (
+              <button key={`m${i}`} onClick={() => { setCurrentSection('mcq'); setCurrentQ(i); }}
+                style={{
+                  width: '32px', height: '32px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
+                  background: currentSection === 'mcq' && currentQ === i ? '#6366f1'
+                    : mcqAnswers[i] ? 'rgba(16,185,129,0.2)' : flaggedQuestions[`mcq_${i}`] ? 'rgba(245,158,11,0.2)' : '#1e293b',
+                  color: currentSection === 'mcq' && currentQ === i ? '#fff'
+                    : mcqAnswers[i] ? '#10b981' : flaggedQuestions[`mcq_${i}`] ? '#f59e0b' : '#64748b',
+                }}>
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          {codingQs.length > 0 && (
+            <>
+              <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '12px', marginBottom: '8px', textTransform: 'uppercase' }}>Coding</div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {codingQs.map((_, i) => (
+                  <button key={`c${i}`} onClick={() => { setCurrentSection('coding'); setCurrentQ(i); }}
+                    style={{
+                      width: '32px', height: '32px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
+                      background: currentSection === 'coding' && currentQ === i ? '#0ea5e9'
+                        : codingAnswers[i] ? 'rgba(16,185,129,0.2)' : '#1e293b',
+                      color: currentSection === 'coding' && currentQ === i ? '#fff'
+                        : codingAnswers[i] ? '#10b981' : '#64748b',
+                    }}>
+                    C{i + 1}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Warnings */}
+        {tabSwitches > 0 && (
+          <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: '0.75rem', color: tabSwitches >= 3 ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>
+              <AlertTriangle size={12} style={{ verticalAlign: 'middle' }} /> Tab Switches: {tabSwitches}/3
+            </div>
+          </div>
+        )}
+
+        {/* Submit */}
+        <div style={{ padding: '12px' }}>
+          <button onClick={handleManualSubmit} disabled={submitting}
+            style={{ width: '100%', padding: '12px', background: '#10b981', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+            <Send size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+            {submitting ? 'Submitting...' : 'Submit Test'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── MAIN CONTENT AREA ── */}
+      <div style={{ marginLeft: '260px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        
+        {/* Top Tab Bar */}
+        <div style={{ background: '#111827', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0 24px', display: 'flex', alignItems: 'center', gap: '4px', position: 'sticky', top: 0, zIndex: 5 }}>
+          <button onClick={() => { setCurrentSection('mcq'); setCurrentQ(0); }}
+            style={{ padding: '14px 20px', background: 'transparent', border: 'none', color: currentSection === 'mcq' ? '#6366f1' : '#64748b', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', borderBottom: currentSection === 'mcq' ? '2px solid #6366f1' : '2px solid transparent' }}>
+            <BookOpen size={16} style={{ verticalAlign: 'middle', marginRight: '6px' }} />MCQ ({mcqs.length})
+          </button>
+          {codingQs.length > 0 && (
+            <button onClick={() => { setCurrentSection('coding'); setCurrentQ(0); }}
+              style={{ padding: '14px 20px', background: 'transparent', border: 'none', color: currentSection === 'coding' ? '#0ea5e9' : '#64748b', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', borderBottom: currentSection === 'coding' ? '2px solid #0ea5e9' : '2px solid transparent' }}>
+              <Code size={16} style={{ verticalAlign: 'middle', marginRight: '6px' }} />Coding ({codingQs.length})
+            </button>
+          )}
+          <div style={{ flex: 1 }}></div>
+          <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{testData.company_name || ''} • {testData.job_title}</span>
+        </div>
+
+        {/* ── MCQ SECTION ── */}
+        {currentSection === 'mcq' && mcqs.length > 0 && (
+          <div style={{ padding: '30px 40px', flex: 1 }}>
+            <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+              {/* Question header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
+                  Question {currentQ + 1} of {mcqs.length}
+                </span>
+                <button onClick={() => toggleFlag(`mcq_${currentQ}`)}
+                  style={{ background: flaggedQuestions[`mcq_${currentQ}`] ? 'rgba(245,158,11,0.15)' : 'transparent', border: `1px solid ${flaggedQuestions[`mcq_${currentQ}`] ? '#f59e0b' : 'rgba(255,255,255,0.08)'}`, borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', color: flaggedQuestions[`mcq_${currentQ}`] ? '#f59e0b' : '#64748b', fontSize: '0.8rem' }}>
+                  <Flag size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                  {flaggedQuestions[`mcq_${currentQ}`] ? 'Flagged' : 'Flag for Review'}
+                </button>
+              </div>
+
+              {/* Question card */}
+              <div style={{ background: '#111827', borderRadius: '14px', padding: '32px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 600, lineHeight: 1.6, margin: '0 0 28px', color: '#f1f5f9' }}>
+                  {mcqs[currentQ].question}
+                </h2>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {mcqs[currentQ].options?.map((opt, oi) => (
+                    <button key={oi} onClick={() => handleMcqAnswer(currentQ, opt)}
+                      style={{
+                        padding: '16px 20px', textAlign: 'left', cursor: 'pointer', fontSize: '0.95rem',
+                        background: mcqAnswers[currentQ] === opt ? 'rgba(99,102,241,0.15)' : '#1e293b',
+                        border: `2px solid ${mcqAnswers[currentQ] === opt ? '#6366f1' : 'rgba(255,255,255,0.04)'}`,
+                        borderRadius: '10px', color: '#f1f5f9', transition: 'all 0.15s',
+                        display: 'flex', alignItems: 'center', gap: '14px',
+                      }}>
+                      <span style={{
+                        display: 'inline-flex', width: '32px', height: '32px', borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 700, flexShrink: 0,
+                        background: mcqAnswers[currentQ] === opt ? '#6366f1' : '#334155',
+                        color: mcqAnswers[currentQ] === opt ? '#fff' : '#94a3b8',
+                      }}>
+                        {String.fromCharCode(65 + oi)}
+                      </span>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Navigation */}
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <button onClick={() => setCurrentQ(Math.max(0, currentQ - 1))} disabled={currentQ === 0}
+                  style={{ padding: '10px 20px', background: '#1e293b', border: 'none', borderRadius: '8px', color: currentQ === 0 ? '#334155' : '#94a3b8', cursor: currentQ === 0 ? 'default' : 'pointer', fontSize: '0.9rem' }}>
+                  <ChevronLeft size={16} style={{ verticalAlign: 'middle' }} /> Previous
+                </button>
+                <button onClick={() => {
+                  if (currentQ === mcqs.length - 1 && codingQs.length > 0) {
+                    setCurrentSection('coding'); setCurrentQ(0);
+                  } else {
+                    setCurrentQ(Math.min(mcqs.length - 1, currentQ + 1));
+                  }
+                }}
+                  style={{ padding: '10px 20px', background: '#6366f1', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>
+                  {currentQ === mcqs.length - 1 && codingQs.length > 0 ? 'Go to Coding →' : 'Next'} <ChevronRight size={16} style={{ verticalAlign: 'middle' }} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CODING SECTION (Split Pane) ── */}
+        {currentSection === 'coding' && codingQs.length > 0 && (
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            
+            {/* LEFT: Problem Description */}
+            <div style={{ width: '45%', overflowY: 'auto', borderRight: '1px solid rgba(255,255,255,0.06)', padding: '24px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '8px' }}>Coding Challenge {currentQ + 1} of {codingQs.length}</div>
+              <h2 style={{ margin: '0 0 16px', fontSize: '1.2rem', color: '#f1f5f9' }}>{codingQs[currentQ].title}</h2>
+              <p style={{ color: '#94a3b8', lineHeight: 1.7, fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>{codingQs[currentQ].description}</p>
+
+              {codingQs[currentQ].constraints && (
+                <div style={{ margin: '16px 0', padding: '10px 14px', background: 'rgba(245,158,11,0.08)', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.2)' }}>
+                  <strong style={{ color: '#f59e0b', fontSize: '0.8rem' }}>Constraints:</strong>
+                  <p style={{ margin: '4px 0 0', color: '#fbbf24', fontSize: '0.85rem' }}>{codingQs[currentQ].constraints}</p>
+                </div>
+              )}
+
+              {/* Example */}
+              {codingQs[currentQ].example_input && (
+                <div style={{ margin: '16px 0' }}>
+                  <h4 style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '8px' }}>Example:</h4>
+                  <div style={{ background: '#1e293b', borderRadius: '8px', padding: '12px', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                    <div style={{ color: '#64748b', marginBottom: '4px' }}>Input:</div>
+                    <div style={{ color: '#10b981', marginBottom: '10px' }}>{codingQs[currentQ].example_input}</div>
+                    <div style={{ color: '#64748b', marginBottom: '4px' }}>Output:</div>
+                    <div style={{ color: '#10b981' }}>{codingQs[currentQ].example_output}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Test Case Results */}
+              {codeResults[currentQ] && (
+                <div style={{ marginTop: '20px' }}>
+                  <h4 style={{
+                    color: codeResults[currentQ].success ? '#10b981' : '#ef4444',
+                    fontSize: '0.85rem', marginBottom: '10px'
+                  }}>
+                    Results: {codeResults[currentQ].passed_count}/{codeResults[currentQ].total_count} Passed
+                  </h4>
+                  {(codeResults[currentQ].results || []).map((r, ri) => (
+                    <div key={ri} style={{
+                      padding: '10px 12px', margin: '6px 0', borderRadius: '6px', fontSize: '0.8rem',
+                      background: r.passed ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                      border: `1px solid ${r.passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                      fontFamily: 'monospace',
+                    }}>
+                      <div style={{ color: r.passed ? '#10b981' : '#ef4444', fontWeight: 600, marginBottom: '4px' }}>
+                        {r.passed ? '✓' : '✗'} Test Case {r.test_case || ri + 1}
+                      </div>
+                      {!r.passed && r.expected && (
+                        <div style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+                          Expected: {r.expected} | Got: {r.actual || 'N/A'}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {codeResults[currentQ].feedback && (
+                    <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
+                      💡 {codeResults[currentQ].feedback}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Coding nav */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
+                <button onClick={() => { if (currentQ === 0) { setCurrentSection('mcq'); setCurrentQ(mcqs.length - 1); } else setCurrentQ(currentQ - 1); }}
+                  style={{ padding: '8px 16px', background: '#1e293b', border: 'none', borderRadius: '6px', color: '#94a3b8', cursor: 'pointer', fontSize: '0.85rem' }}>
+                  ← {currentQ === 0 ? 'Back to MCQ' : 'Previous'}
+                </button>
+                {currentQ < codingQs.length - 1 && (
+                  <button onClick={() => setCurrentQ(currentQ + 1)}
+                    style={{ padding: '8px 16px', background: '#0ea5e9', border: 'none', borderRadius: '6px', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
+                    Next →
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT: Code Editor */}
+            <div style={{ width: '55%', display: 'flex', flexDirection: 'column' }}>
+              {/* Language selector + Run */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', background: '#111827', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <select value={codingLanguages[currentQ] || 'python'}
+                  onChange={e => handleLanguageChange(currentQ, e.target.value)}
+                  style={{ padding: '6px 12px', background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#f8fafc', fontSize: '0.85rem' }}>
+                  <option value="python">Python</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="java">Java</option>
+                  <option value="cpp">C++</option>
+                </select>
+                <button onClick={() => handleRunCode(currentQ)} disabled={runningCode[currentQ]}
+                  style={{ padding: '6px 16px', background: '#10b981', border: 'none', borderRadius: '6px', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {runningCode[currentQ] ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />}
+                  {runningCode[currentQ] ? 'Running...' : 'Run Code'}
+                </button>
+                <div style={{ flex: 1 }}></div>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  <Terminal size={12} style={{ verticalAlign: 'middle' }} /> Code Editor
+                </span>
+              </div>
+
+              {/* Code textarea */}
+              <textarea
+                value={codingAnswers[currentQ] || ''}
+                onChange={e => handleCodingAnswer(currentQ, e.target.value)}
+                placeholder={`# Write your ${codingLanguages[currentQ] || 'python'} solution here...\n\ndef solve():\n    pass`}
+                spellCheck={false}
+                style={{
+                  flex: 1, width: '100%', padding: '20px', resize: 'none',
+                  background: '#0d1117', border: 'none', color: '#c9d1d9',
+                  fontSize: '14px', fontFamily: "'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+                  lineHeight: 1.6, outline: 'none', tabSize: 4,
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = e.target.selectionStart;
+                    const end = e.target.selectionEnd;
+                    const value = e.target.value;
+                    handleCodingAnswer(currentQ, value.substring(0, start) + '    ' + value.substring(end));
+                    setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = start + 4; }, 0);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default TestEnvironment;

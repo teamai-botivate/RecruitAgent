@@ -1,0 +1,48 @@
+[
+    {
+        "name": "Gautam Gupta",
+        "email": "gautamgupta1025@gmail.com",
+        "role": "Web Developer",
+        "resume_path": "/reports/Campaign_2026-03-28_13-09-32/Shortlisted_Resumes/[Gmail] demo-resume.pdf",
+        "ai_analysis": {
+            "strengths": [
+                "Strong technical skills in full-stack development",
+                "Experience with modern web technologies and frameworks",
+                "Hands-on project experience with real-world applications"
+            ],
+            "weaknesses": [
+                "Limited professional work experience",
+                "No mention of open source contributions or hackathons"
+            ],
+            "reasoning": "The candidate has relevant skills and projects for a web developer role but limited professional experience.",
+            "score": 41.5,
+            "matched_skills": [
+                "Python",
+                "Java",
+                "HTML",
+                "CSS",
+                "JavaScript",
+                "ReactJS",
+                "NodeJS",
+                "ExpressJS",
+                "Flask",
+                "FastAPI",
+                "PostgreSQL",
+                "Machine Learning",
+                "NLP",
+                "Scikit-learn",
+                "SpaCy",
+                "NLTK",
+                "Git",
+                "GitHub",
+                "Jupyter Notebook",
+                "VS Code",
+                "Google Apps Script",
+                "Google Sheets API",
+                "Data Structures and Algorithms",
+                "Microsoft Office"
+            ],
+            "status": "Potential"
+        }
+    }
+]
