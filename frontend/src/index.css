@@ -538,6 +538,47 @@ a:hover { color: var(--accent); }
 @media (max-width: 768px) {
   :root { --sidebar-w: 0px; }
 
+  /* Modal responsive adjustments */
+  .modal-outer { padding: 12px; }
+  
+  .modal-container {
+    width: 100% !important;
+    height: 100dvh !important;
+    maxWidth: 100% !important;
+    border-radius: 12px;
+  }
+  
+  .modal-header {
+    padding: 16px 20px;
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  
+  .modal-body-layout {
+    flex-direction: column;
+  }
+  
+  .modal-sidebar-nav {
+    width: 100% !important;
+    borderRight: none !important;
+    borderBottom: 1px solid var(--border-light) !important;
+    padding: 12px 16px !important;
+    display: flex !important;
+    flexDirection: row !important;
+    overflowX: auto;
+    gap: 8px;
+  }
+  
+  .modal-sidebar-nav button {
+    minWidth: fit-content;
+    fontSize: 0.85rem !important;
+    padding: 10px 14px !important;
+  }
+  
+  .modal-main-content {
+    padding: 20px 16px !important;
+    font-size: 0.95rem;
+  }
   .app-layout {
     display: block;
     min-height: 100dvh;
@@ -633,6 +674,23 @@ a:hover { color: var(--accent); }
 
 /* ── Mobile (480px and below) ── */
 @media (max-width: 480px) {
+  /* Mobile modal styles */
+  .modal-header {
+    padding: 12px 16px !important;
+  }
+  
+  .modal-header h2 {
+    fontSize: 1.1rem !important;
+  }
+  
+  .modal-sidebar-nav button {
+    fontSize: 0.75rem !important;
+    padding: 8px 10px !important;
+  }
+  
+  .modal-main-content {
+    padding: 16px 12px !important;
+  }
   .main-content-inner { padding: 72px 12px 16px; }
   
   h1 { font-size: 1.2rem; }
