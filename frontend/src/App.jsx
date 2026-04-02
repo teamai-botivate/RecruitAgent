@@ -115,7 +115,7 @@ function App() {
 
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="logo-icon">BA</div>
+          <div className="logo-icon">B</div>
           <div>
             <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: 700 }}>Botivate</h2>
             <p style={{ fontSize: '0.75rem', margin: 0 }}>RecruitAgent</p>
