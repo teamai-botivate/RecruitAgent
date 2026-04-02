@@ -58,7 +58,27 @@ const AnalyseResults = ({ navigateTo }) => {
             );
             return { ...c, test_status: assessment?.Status || 'Pending', test_token: assessment?.Token || '' };
           });
-          setCandidates(cands);
+
+          // Deduplicate by email so the same candidate is shown once even if multiple rows exist.
+          const uniqueByEmail = new Map();
+          cands.forEach((cand) => {
+            const emailKey = String(cand.Email || cand.email || '').toLowerCase().trim();
+            if (!emailKey) return;
+
+            const existing = uniqueByEmail.get(emailKey);
+            if (!existing) {
+              uniqueByEmail.set(emailKey, cand);
+              return;
+            }
+
+            const existingScore = Number.parseFloat(existing.Score ?? existing.score ?? '-1');
+            const nextScore = Number.parseFloat(cand.Score ?? cand.score ?? '-1');
+            if (nextScore > existingScore) {
+              uniqueByEmail.set(emailKey, cand);
+            }
+          });
+
+          setCandidates(Array.from(uniqueByEmail.values()));
         }
       });
     // Fetch test answers
@@ -144,7 +164,7 @@ const AnalyseResults = ({ navigateTo }) => {
         <p>Review candidate performance, answer keys, AI analysis, and select finalists for interview.</p>
       </header>
 
-      <div className="card glass-panel" style={{ marginBottom: '24px' }}>
+      <div className="card glass-panel" style={{ marginBottom: '24px', position: 'relative', zIndex: 60, overflow: 'visible' }}>
         <div className="card-header">
           <h2 className="card-title"><BarChart3 size={20} color="var(--accent)" /> Select Campaign</h2>
         </div>
