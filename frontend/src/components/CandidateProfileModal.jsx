@@ -65,19 +65,19 @@ const CandidateProfileModal = ({ candidate, onClose, jdId }) => {
         
         {/* Modern Header */}
         <div className="modal-header" style={{ padding: '24px 32px', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0, flex: 1, width: '100%' }}>
             <div style={{ width: '48px', height: '48px', minWidth: '48px', borderRadius: '16px', background: 'linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 16px rgba(99, 102, 241, 0.2)' }}>
               <User size={24} />
             </div>
             <div style={{ minWidth: 0 }}>
-              <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', fontWeight: 700, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</h2>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <h2 style={{ margin: '0 0 6px 0', fontSize: '1.3rem', fontWeight: 700, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{name}</h2>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><FileText size={14} /> {email}</span>
                 <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}><Award size={16} /> Score: {score}</span>
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '10px', border: 'none', color: 'var(--text-main)', cursor: 'pointer', flexShrink: 0 }}>
+          <button onClick={onClose} className="btn-icon" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '10px', border: 'none', color: 'var(--text-main)', cursor: 'pointer', flexShrink: 0, position: 'absolute', top: '16px', right: '16px' }}>
             <X size={24} />
           </button>
         </div>
@@ -85,6 +85,7 @@ const CandidateProfileModal = ({ candidate, onClose, jdId }) => {
         <div className="modal-body-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Vertical Sidebar Navigation */}
           <div className="modal-sidebar-nav" style={{ width: '240px', borderRight: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.01)', padding: '24px 16px', flexDirection: 'column', display: 'flex' }}>
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
              {[
                { id: 'resume', label: 'View Resume', icon: <FileText size={18} /> },
                { id: 'ai', label: 'AI Selection Reasoning', icon: <Brain size={18} /> },
@@ -96,6 +97,7 @@ const CandidateProfileModal = ({ candidate, onClose, jdId }) => {
                  style={{ 
                    width: '100%', padding: '14px 18px', borderRadius: '12px', border: 'none', 
                    display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '10px',
+                  margin: 0,
                    cursor: 'pointer', fontSize: '0.95rem', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                    fontWeight: activeTab === tab.id ? 600 : 400,
                    background: activeTab === tab.id ? 'var(--primary)' : 'transparent',
@@ -106,10 +108,10 @@ const CandidateProfileModal = ({ candidate, onClose, jdId }) => {
                  {tab.icon} {tab.label}
                </button>
              ))}
+             </div>
           </div>
 
           {/* Main Content Area */}
-          <div className="modal-main-content" style={{ flex: 1, overflowY: 'auto', padding: '32px', background: 'var(--bg-dark)' }}>
             
             {/* TAB 1: RESUME */}
             {activeTab === 'resume' && (
