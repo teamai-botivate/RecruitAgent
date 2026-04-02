@@ -20,6 +20,24 @@ const AnalyseResults = ({ navigateTo }) => {
   const [showAnswerKey, setShowAnswerKey] = useState(null);
   const [selectedCandidateModal, setSelectedCandidateModal] = useState(null);
 
+  const getStatusLabel = (statusValue) => {
+    const raw = String(statusValue || '').trim();
+    if (!raw) return 'Pending';
+    return raw.split('|')[0].trim();
+  };
+
+  const getStatusBadgeClass = (statusValue) => {
+    const label = getStatusLabel(statusValue).toLowerCase();
+    if (label === 'major violation' || label === 'suspicious') return 'badge-danger';
+    if (label === 'minor violation' || label === 'pending') return 'badge-warning';
+    return 'badge-success';
+  };
+
+  const isFlaggedStatus = (statusValue) => {
+    const label = getStatusLabel(statusValue).toLowerCase();
+    return label === 'minor violation' || label === 'suspicious' || label === 'major violation';
+  };
+
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/jd/all`)
       .then(res => res.json())
@@ -185,7 +203,7 @@ const AnalyseResults = ({ navigateTo }) => {
             </div>
             <div className="stat-card">
               <div className="stat-icon" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }}><ShieldAlert size={24} /></div>
-              <div className="stat-content"><h3>Flagged</h3><p>{candidates.filter(c => c.test_status === 'Suspicious').length}</p></div>
+              <div className="stat-content"><h3>Flagged</h3><p>{candidates.filter(c => isFlaggedStatus(c.test_status)).length}</p></div>
             </div>
           </div>
 
@@ -204,7 +222,11 @@ const AnalyseResults = ({ navigateTo }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
                       <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-main)' }}>{cand.Name}</h3>
                       <span className={`badge ${cand.Status === 'Shortlisted' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>{cand.Status}</span>
-                      {cand.test_status === 'Suspicious' && <span className="badge badge-danger" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Suspicious</span>}
+                      {isFlaggedStatus(cand.test_status) && (
+                        <span className={`badge ${getStatusBadgeClass(cand.test_status)}`} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                          {getStatusLabel(cand.test_status)}
+                        </span>
+                      )}
                     </div>
                     <p style={{ margin: '0 0 12px 0', fontSize: '0.95rem', color: 'var(--text-muted)' }}>📧 {cand.Email}</p>
                     {cand.Matched_Skills && (
@@ -249,7 +271,7 @@ const AnalyseResults = ({ navigateTo }) => {
                       <h4 style={{ color: 'var(--success)', marginBottom: '12px', marginTop: 0 }}>Matched Skills</h4>
                       <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0 0 16px 0' }}>{cand.Matched_Skills || 'None'}</p>
                       <h4 style={{ color: 'var(--warning)', marginBottom: '10px', marginTop: 0 }}>Proctoring Status</h4>
-                      <span className={`badge ${cand.test_status === 'Suspicious' ? 'badge-danger' : 'badge-success'}`}>
+                      <span className={`badge ${getStatusBadgeClass(cand.test_status)}`}>
                         {cand.test_status || 'Not Tested'}
                       </span>
                       {cand.Report_Path && (

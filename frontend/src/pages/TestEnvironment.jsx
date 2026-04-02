@@ -12,6 +12,7 @@ const TestEnvironment = () => {
   const [isMobile, setIsMobile] = useState(false);
 
   const videoRef = useRef(null);
+  const mediaStreamRef = useRef(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
 
@@ -21,8 +22,25 @@ const TestEnvironment = () => {
   const [tabSwitches, setTabSwitches] = useState(0);
   const [fullscreenExits, setFullscreenExits] = useState(0);
   const [cameraDenied, setCameraDenied] = useState(0);
+  const [faceMissingEvents, setFaceMissingEvents] = useState(0);
+  const [faceOutOfFrameEvents, setFaceOutOfFrameEvents] = useState(0);
+  const [multiFaceEvents, setMultiFaceEvents] = useState(0);
+  const [longFaceMissingEvents, setLongFaceMissingEvents] = useState(0);
+  const [faceTrackingState, setFaceTrackingState] = useState('Initializing');
+  const [faceTrackingSupported, setFaceTrackingSupported] = useState(typeof window !== 'undefined' && 'FaceDetector' in window);
   const [warnings, setWarnings] = useState([]);
   const [proctoringEvents, setProctoringEvents] = useState([]);
+
+  const faceDetectorRef = useRef(null);
+  const faceCheckIntervalRef = useRef(null);
+  const faceDetectBusyRef = useRef(false);
+  const missingSecondsRef = useRef(0);
+  const offFrameSecondsRef = useRef(0);
+  const multiFaceActiveRef = useRef(false);
+  const faceMissingMinorRaisedRef = useRef(false);
+  const faceMissingMajorRaisedRef = useRef(false);
+  const faceOffMinorRaisedRef = useRef(false);
+  const faceOffHighRaisedRef = useRef(false);
 
   const [mcqAnswers, setMcqAnswers] = useState({});
   const [codingAnswers, setCodingAnswers] = useState({});
@@ -37,6 +55,35 @@ const TestEnvironment = () => {
   const [verifiedEmail, setVerifiedEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [starting, setStarting] = useState(false);
+
+  const computeViolationStatus = () => {
+    if (
+      cameraDenied > 0 ||
+      tabSwitches >= 5 ||
+      fullscreenExits >= 3 ||
+      multiFaceEvents > 0 ||
+      longFaceMissingEvents > 0
+    ) {
+      return 'Major Violation';
+    }
+    if (
+      tabSwitches >= 3 ||
+      fullscreenExits >= 2 ||
+      faceMissingEvents >= 2 ||
+      faceOutOfFrameEvents >= 3
+    ) {
+      return 'Suspicious';
+    }
+    if (
+      tabSwitches > 0 ||
+      fullscreenExits > 0 ||
+      faceMissingEvents > 0 ||
+      faceOutOfFrameEvents > 0
+    ) {
+      return 'Minor Violation';
+    }
+    return 'Normal';
+  };
 
   const recordProctorEvent = (eventType, severity, details) => {
     setProctoringEvents(prev => ([
@@ -88,10 +135,9 @@ const TestEnvironment = () => {
     
     const fullscreenHandler = () => {
       if (!document.fullscreenElement) {
-        setTabSwitches(prev => {
+        setFullscreenExits(prev => {
           const n = prev + 1;
           setWarnings(w => [...w, `⚠️ Exited Fullscreen: Warning #${n} at ${new Date().toLocaleTimeString()}`]);
-          setFullscreenExits(fs => fs + 1);
           recordProctorEvent('fullscreen_exit', 'high', `Fullscreen exited (warning #${n})`);
           return n;
         });
@@ -120,10 +166,163 @@ const TestEnvironment = () => {
     return () => clearInterval(timerRef.current);
   }, [phase]);
 
+  // Re-attach camera stream when the test UI video element mounts.
+  useEffect(() => {
+    if (phase !== 'test' || !cameraActive) return;
+    if (videoRef.current && mediaStreamRef.current && videoRef.current.srcObject !== mediaStreamRef.current) {
+      videoRef.current.srcObject = mediaStreamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [phase, cameraActive]);
+
+  const isFaceCentered = (faceBox, video) => {
+    if (!faceBox || !video || !video.videoWidth || !video.videoHeight) return false;
+
+    const centerX = (faceBox.x + (faceBox.width / 2)) / video.videoWidth;
+    const centerY = (faceBox.y + (faceBox.height / 2)) / video.videoHeight;
+    const areaRatio = (faceBox.width * faceBox.height) / (video.videoWidth * video.videoHeight);
+
+    const horizontalInRange = centerX >= 0.2 && centerX <= 0.8;
+    const verticalInRange = centerY >= 0.2 && centerY <= 0.82;
+    const sizeInRange = areaRatio >= 0.02 && areaRatio <= 0.65;
+
+    return horizontalInRange && verticalInRange && sizeInRange;
+  };
+
+  useEffect(() => {
+    if (phase !== 'test' || !cameraActive) return;
+
+    if (!('FaceDetector' in window)) {
+      setFaceTrackingSupported(false);
+      setFaceTrackingState('Unsupported');
+      return;
+    }
+
+    setFaceTrackingSupported(true);
+    if (!faceDetectorRef.current) {
+      faceDetectorRef.current = new window.FaceDetector({ maxDetectedFaces: 2, fastMode: true });
+    }
+
+    setFaceTrackingState('Monitoring');
+    faceCheckIntervalRef.current = setInterval(async () => {
+      if (faceDetectBusyRef.current) return;
+      if (!videoRef.current || videoRef.current.readyState < 2) return;
+
+      faceDetectBusyRef.current = true;
+      try {
+        const faces = await faceDetectorRef.current.detect(videoRef.current);
+
+        if (!faces || faces.length === 0) {
+          setFaceTrackingState('Face not detected');
+          missingSecondsRef.current += 1;
+          offFrameSecondsRef.current = 0;
+          faceOffMinorRaisedRef.current = false;
+          faceOffHighRaisedRef.current = false;
+          multiFaceActiveRef.current = false;
+
+          if (missingSecondsRef.current >= 3 && !faceMissingMinorRaisedRef.current) {
+            faceMissingMinorRaisedRef.current = true;
+            setFaceMissingEvents(prev => prev + 1);
+            setWarnings(prev => [...prev.slice(-9), `⚠️ Face not visible for ${missingSecondsRef.current}s`]);
+            recordProctorEvent('face_missing', 'medium', `Face not visible for ${missingSecondsRef.current}s`);
+          }
+
+          if (missingSecondsRef.current >= 10 && !faceMissingMajorRaisedRef.current) {
+            faceMissingMajorRaisedRef.current = true;
+            setLongFaceMissingEvents(prev => prev + 1);
+            setWarnings(prev => [...prev.slice(-9), `❌ Face absent for ${missingSecondsRef.current}s (major violation)`]);
+            recordProctorEvent('face_missing_long', 'critical', `Face absent for ${missingSecondsRef.current}s`);
+          }
+
+          return;
+        }
+
+        if (faces.length > 1) {
+          setFaceTrackingState('Multiple faces detected');
+          missingSecondsRef.current = 0;
+          offFrameSecondsRef.current = 0;
+          faceMissingMinorRaisedRef.current = false;
+          faceMissingMajorRaisedRef.current = false;
+          faceOffMinorRaisedRef.current = false;
+          faceOffHighRaisedRef.current = false;
+
+          if (!multiFaceActiveRef.current) {
+            multiFaceActiveRef.current = true;
+            setMultiFaceEvents(prev => prev + 1);
+            setWarnings(prev => [...prev.slice(-9), '❌ Multiple faces detected']);
+            recordProctorEvent('multiple_faces', 'critical', `Detected ${faces.length} faces`);
+          }
+          return;
+        }
+
+        multiFaceActiveRef.current = false;
+        missingSecondsRef.current = 0;
+        faceMissingMinorRaisedRef.current = false;
+        faceMissingMajorRaisedRef.current = false;
+
+        const faceBox = faces[0]?.boundingBox;
+        const centered = isFaceCentered(faceBox, videoRef.current);
+
+        if (!centered) {
+          setFaceTrackingState('Face out of frame');
+          offFrameSecondsRef.current += 1;
+
+          if (offFrameSecondsRef.current >= 3 && !faceOffMinorRaisedRef.current) {
+            faceOffMinorRaisedRef.current = true;
+            setFaceOutOfFrameEvents(prev => prev + 1);
+            setWarnings(prev => [...prev.slice(-9), '⚠️ Keep your face centered in camera']);
+            recordProctorEvent('face_out_of_frame', 'medium', 'Face moved outside allowed frame');
+          }
+
+          if (offFrameSecondsRef.current >= 8 && !faceOffHighRaisedRef.current) {
+            faceOffHighRaisedRef.current = true;
+            setFaceOutOfFrameEvents(prev => prev + 1);
+            setWarnings(prev => [...prev.slice(-9), '⚠️ Face out of frame for too long']);
+            recordProctorEvent('face_out_of_frame_long', 'high', `Out of frame for ${offFrameSecondsRef.current}s`);
+          }
+          return;
+        }
+
+        setFaceTrackingState('Face aligned');
+        offFrameSecondsRef.current = 0;
+        faceOffMinorRaisedRef.current = false;
+        faceOffHighRaisedRef.current = false;
+      } catch (err) {
+        setFaceTrackingState('Tracking paused');
+      } finally {
+        faceDetectBusyRef.current = false;
+      }
+    }, 1000);
+
+    return () => {
+      if (faceCheckIntervalRef.current) {
+        clearInterval(faceCheckIntervalRef.current);
+        faceCheckIntervalRef.current = null;
+      }
+    };
+  }, [phase, cameraActive]);
+
+  useEffect(() => {
+    return () => {
+      if (faceCheckIntervalRef.current) {
+        clearInterval(faceCheckIntervalRef.current);
+        faceCheckIntervalRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, []);
+
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
       setCameraActive(true);
       setCameraError('');
       recordProctorEvent('camera_enabled', 'info', 'Candidate granted webcam access');
@@ -278,11 +477,16 @@ const TestEnvironment = () => {
           token, email: verifiedEmail || email,
           mcq_score: scores.mcqScore, mcq_total: scores.mcqTotal,
           coding_score: scores.codingScore, coding_total: scores.codingTotal,
-          suspicious: (tabSwitches >= 3 || fullscreenExits >= 2 || cameraDenied > 0) ? 'Suspicious' : 'Normal',
+          suspicious: computeViolationStatus(),
           proctoring_summary: {
             tab_switches: tabSwitches,
             fullscreen_exits: fullscreenExits,
             camera_denied: cameraDenied,
+            face_missing_events: faceMissingEvents,
+            face_out_of_frame_events: faceOutOfFrameEvents,
+            multi_face_events: multiFaceEvents,
+            long_face_missing_events: longFaceMissingEvents,
+            face_tracking_supported: faceTrackingSupported,
             event_count: proctoringEvents.length,
           },
           proctoring_events: proctoringEvents,
@@ -297,7 +501,14 @@ const TestEnvironment = () => {
       alert('Submission error. Please try again.');
     } finally {
       setSubmitting(false);
-      if (videoRef.current?.srcObject) videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+      if (faceCheckIntervalRef.current) {
+        clearInterval(faceCheckIntervalRef.current);
+        faceCheckIntervalRef.current = null;
+      }
       clearInterval(timerRef.current);
     }
   };
@@ -422,7 +633,10 @@ const TestEnvironment = () => {
             <h3 style={{ margin: '0 0 14px', color: '#f59e0b', fontSize: '0.95rem' }}>⚠️ Rules & Regulations</h3>
             <ul style={{ margin: 0, paddingLeft: '20px', color: '#fbbf24', fontSize: '0.88rem', lineHeight: 2 }}>
               <li>Your <strong>webcam must remain active</strong> throughout the entire test</li>
-              <li>Tab switching will be <strong>detected and flagged</strong> — 3+ switches mark you as suspicious</li>
+              <li>Keep your <strong>face visible and centered</strong> throughout the test</li>
+              <li>Missing face or looking away for long duration is automatically flagged</li>
+              <li>Multiple faces in frame are treated as a <strong>major violation</strong></li>
+              <li>Tab switching will be <strong>detected and flagged</strong> — repeated switches raise violation level</li>
               <li>The test will <strong>auto-submit</strong> when the timer reaches zero</li>
               <li>You <strong>must use a desktop/laptop</strong> — mobiles and tablets are blocked</li>
               <li>No external help, reference materials, or browser extensions</li>
@@ -540,11 +754,22 @@ const TestEnvironment = () => {
         </div>
 
         {/* Warnings */}
-        {tabSwitches > 0 && (
+        {(tabSwitches > 0 || fullscreenExits > 0 || faceMissingEvents > 0 || faceOutOfFrameEvents > 0 || multiFaceEvents > 0) && (
           <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: '0.75rem', color: tabSwitches >= 3 ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>
+            <div style={{ fontSize: '0.75rem', color: tabSwitches >= 3 ? '#ef4444' : '#f59e0b', fontWeight: 600, marginBottom: '4px' }}>
               <AlertTriangle size={12} style={{ verticalAlign: 'middle' }} /> Tab Switches: {tabSwitches}/3
             </div>
+            <div style={{ fontSize: '0.75rem', color: fullscreenExits >= 2 ? '#ef4444' : '#f59e0b', fontWeight: 600, marginBottom: '4px' }}>
+              <AlertTriangle size={12} style={{ verticalAlign: 'middle' }} /> Fullscreen Exits: {fullscreenExits}/2
+            </div>
+            <div style={{ fontSize: '0.75rem', color: faceTrackingSupported ? '#38bdf8' : '#94a3b8', fontWeight: 600, marginBottom: '4px' }}>
+              <Camera size={12} style={{ verticalAlign: 'middle' }} /> Face Tracking: {faceTrackingSupported ? faceTrackingState : 'Unsupported in this browser'}
+            </div>
+            {faceTrackingSupported && (
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                face-missing: {faceMissingEvents} | off-frame: {faceOutOfFrameEvents} | multi-face: {multiFaceEvents}
+              </div>
+            )}
           </div>
         )}
 

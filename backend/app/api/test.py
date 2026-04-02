@@ -334,6 +334,34 @@ async def verify_candidate(request: VerifyCandidateRequest):
         "candidate_name": candidate_meta.get("name") or candidate_meta.get("Name") or "Candidate",
     }
 
+def _compute_proctoring_status(
+    tab_switches: int,
+    fullscreen_exits: int,
+    camera_denied: int,
+    face_missing_events: int,
+    face_out_of_frame_events: int,
+    multi_face_events: int,
+    long_face_missing_events: int,
+) -> str:
+    if (
+        camera_denied > 0
+        or tab_switches >= 5
+        or fullscreen_exits >= 3
+        or multi_face_events > 0
+        or long_face_missing_events > 0
+    ):
+        return "Major Violation"
+    if (
+        tab_switches >= 3
+        or fullscreen_exits >= 2
+        or face_missing_events >= 2
+        or face_out_of_frame_events >= 3
+    ):
+        return "Suspicious"
+    if tab_switches > 0 or fullscreen_exits > 0 or face_missing_events > 0 or face_out_of_frame_events > 0:
+        return "Minor Violation"
+    return "Normal"
+
 
 @router.post("/submit")
 async def submit_test(data: SubmitAssessmentRequest, background_tasks: BackgroundTasks):
@@ -357,15 +385,27 @@ async def submit_test(data: SubmitAssessmentRequest, background_tasks: Backgroun
         tab_switches = int(proctoring_summary.get("tab_switches") or 0)
         fullscreen_exits = int(proctoring_summary.get("fullscreen_exits") or 0)
         camera_denied = int(proctoring_summary.get("camera_denied") or 0)
+        face_missing_events = int(proctoring_summary.get("face_missing_events") or 0)
+        face_out_of_frame_events = int(proctoring_summary.get("face_out_of_frame_events") or 0)
+        multi_face_events = int(proctoring_summary.get("multi_face_events") or 0)
+        long_face_missing_events = int(proctoring_summary.get("long_face_missing_events") or 0)
         event_count = int(proctoring_summary.get("event_count") or 0)
 
-        computed_status = data.suspicious or "Normal"
-        if tab_switches >= 3 or fullscreen_exits >= 2 or camera_denied > 0:
-            computed_status = "Suspicious"
+        computed_status = _compute_proctoring_status(
+            tab_switches,
+            fullscreen_exits,
+            camera_denied,
+            face_missing_events,
+            face_out_of_frame_events,
+            multi_face_events,
+            long_face_missing_events,
+        )
 
         summary_suffix = (
             f"tab_switches={tab_switches}; fullscreen_exits={fullscreen_exits}; "
-            f"camera_denied={camera_denied}; events={event_count}"
+            f"camera_denied={camera_denied}; face_missing={face_missing_events}; "
+            f"face_out={face_out_of_frame_events}; multi_face={multi_face_events}; "
+            f"long_face_missing={long_face_missing_events}; events={event_count}"
         )
         proctoring_status = f"{computed_status} | {summary_suffix}"
 
