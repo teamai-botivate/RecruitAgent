@@ -174,65 +174,72 @@ const AnalyseResults = ({ navigateTo }) => {
 
           {/* Candidate Results Cards */}
           {candidates.map((cand, idx) => (
-            <div key={idx} className="card" style={{ marginBottom: '16px', border: selectedForInterview.includes(cand.Email) ? '1px solid var(--primary)' : '1px solid var(--border-light)', transition: 'border 0.2s' }}>
-              <div className="resp-candidate-row" style={{ padding: '20px', display: 'flex', alignItems: 'flex-start', gap: '15px', flexWrap: 'wrap' }}>
-                <input type="checkbox" checked={selectedForInterview.includes(cand.Email)}
-                  onChange={() => toggleForInterview(cand.Email)}
-                  style={{ width: '20px', height: '20px', accentColor: 'var(--primary)', cursor: 'pointer', marginTop: '4px', flexShrink: 0 }} />
-                
-                <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-                  <h3 style={{ margin: '0 0 4px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    {cand.Name}
-                    <span className={`badge ${cand.Status === 'Shortlisted' ? 'badge-success' : 'badge-warning'}`}>{cand.Status}</span>
-                    {cand.test_status === 'Suspicious' && <span className="badge badge-danger">⚠ Suspicious</span>}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cand.Email}</p>
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
-                    {cand.Matched_Skills?.split(',').slice(0, 5).map((s, si) => (
-                      <span key={si} style={{ fontSize: '0.7rem', padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', border: '1px solid var(--border-light)' }}>{s.trim()}</span>
-                    ))}
+            <div key={idx} className="card" style={{ marginBottom: '24px', padding: '0', border: selectedForInterview.includes(cand.Email) ? '2px solid var(--primary)' : '1px solid var(--border-light)', transition: 'all 0.3s', background: selectedForInterview.includes(cand.Email) ? 'rgba(99,102,241,0.05)' : 'var(--bg-card)', overflow: 'hidden' }}>
+              <div style={{ padding: '28px' }}>
+                {/* Main Header Section */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                  <input type="checkbox" checked={selectedForInterview.includes(cand.Email)}
+                    onChange={() => toggleForInterview(cand.Email)}
+                    style={{ width: '22px', height: '22px', accentColor: 'var(--primary)', cursor: 'pointer', marginTop: '2px', flexShrink: 0 }} />
+                  
+                  {/* Candidate Info */}
+                  <div style={{ flex: 1, minWidth: '250px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-main)' }}>{cand.Name}</h3>
+                      <span className={`badge ${cand.Status === 'Shortlisted' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>{cand.Status}</span>
+                      {cand.test_status === 'Suspicious' && <span className="badge badge-danger" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Suspicious</span>}
+                    </div>
+                    <p style={{ margin: '0 0 12px 0', fontSize: '0.95rem', color: 'var(--text-muted)' }}>📧 {cand.Email}</p>
+                    {cand.Matched_Skills && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {cand.Matched_Skills?.split(',').slice(0, 4).map((s, si) => (
+                          <span key={si} style={{ fontSize: '0.8rem', padding: '6px 12px', background: 'rgba(99,102,241,0.1)', color: 'var(--primary)', borderRadius: '6px', border: '1px solid rgba(99,102,241,0.3)' }}>⭐ {s.trim()}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Score Box */}
+                  <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.02)', padding: '14px 24px', borderRadius: '10px', border: '1px solid var(--border-light)', minWidth: '110px' }}>
+                    <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 700 }}>Score</div>
+                    <div style={{ fontSize: '1.8rem', fontWeight: 700, color: parseFloat(cand.Score) >= 50 ? 'var(--success)' : 'var(--danger)' }}>{cand.Score}</div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>ATS Score</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: parseFloat(cand.Score) >= 50 ? 'var(--success)' : 'var(--danger)' }}>{cand.Score}</div>
-                  </div>
-                  <button className="btn btn-outline" onClick={() => setExpandedCandidate(expandedCandidate === idx ? null : idx)} style={{ padding: '6px 10px' }}>
-                    <Eye size={16} /> {expandedCandidate === idx ? 'Hide' : 'Details'}
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <button className="btn btn-outline" onClick={() => setExpandedCandidate(expandedCandidate === idx ? null : idx)} style={{ padding: '10px 16px', fontSize: '0.9rem', flex: '1', minWidth: '140px' }}>
+                    {expandedCandidate === idx ? <><Eye size={16} /> Hide Details</> : <><Eye size={16} /> Show Details</>}
                   </button>
                   <button className="btn btn-outline" onClick={() => fetchAnswerKey(cand.Email)} 
-                    style={{ padding: '6px 10px', borderColor: showAnswerKey === cand.Email ? 'var(--accent)' : undefined, color: showAnswerKey === cand.Email ? 'var(--accent)' : undefined }}>
-                    {showAnswerKey === cand.Email ? <EyeOff size={16} /> : <CheckSquare size={16} />}
-                    {showAnswerKey === cand.Email ? 'Hide Keys' : 'Answer Key'}
+                    style={{ padding: '10px 16px', fontSize: '0.9rem', flex: '1', minWidth: '140px', borderColor: showAnswerKey === cand.Email ? 'var(--accent)' : undefined, color: showAnswerKey === cand.Email ? 'var(--accent)' : undefined }}>
+                    {showAnswerKey === cand.Email ? <><EyeOff size={16} /> Hide Answer Key</> : <><CheckSquare size={16} /> View Answer Key</>}
                   </button>
-                  <button className="btn btn-outline" onClick={() => setSelectedCandidateModal(cand)} style={{ padding: '6px 10px', color: 'var(--primary)', borderColor: 'var(--primary)' }}>
-                    <User size={16} /> View Profile
+                  <button className="btn btn-primary" onClick={() => setSelectedCandidateModal(cand)} style={{ padding: '10px 16px', fontSize: '0.9rem', flex: '1', minWidth: '140px' }}>
+                    <User size={16} /> View Full Profile
                   </button>
                 </div>
               </div>
 
-              {/* Expanded Detail */}
               {expandedCandidate === idx && (
-                <div className="animate-fade-in" style={{ padding: '0 20px 20px', borderTop: '1px solid var(--border-light)' }}>
-                  <div className="grid-2" style={{ marginTop: '15px' }}>
-                    <div style={{ background: 'var(--bg-input)', padding: '15px', borderRadius: '8px' }}>
-                      <h4 style={{ color: 'var(--accent)', marginBottom: '10px' }}>AI Reasoning</h4>
-                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>{cand.AI_Reasoning || 'No AI analysis available'}</p>
+                <div className="animate-fade-in" style={{ padding: '24px 28px 28px', borderTop: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="grid-2" style={{ marginTop: '0', gap: '20px' }}>
+                    <div style={{ background: 'var(--bg-input)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                      <h4 style={{ color: 'var(--accent)', marginBottom: '12px', marginTop: 0 }}>AI Reasoning</h4>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>{cand.AI_Reasoning || 'No AI analysis available'}</p>
                     </div>
-                    <div style={{ background: 'var(--bg-input)', padding: '15px', borderRadius: '8px' }}>
-                      <h4 style={{ color: 'var(--success)', marginBottom: '10px' }}>Matched Skills</h4>
-                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{cand.Matched_Skills || 'None'}</p>
-                      <h4 style={{ color: 'var(--warning)', marginTop: '15px', marginBottom: '10px' }}>Proctoring Status</h4>
+                    <div style={{ background: 'var(--bg-input)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                      <h4 style={{ color: 'var(--success)', marginBottom: '12px', marginTop: 0 }}>Matched Skills</h4>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0 0 16px 0' }}>{cand.Matched_Skills || 'None'}</p>
+                      <h4 style={{ color: 'var(--warning)', marginBottom: '10px', marginTop: 0 }}>Proctoring Status</h4>
                       <span className={`badge ${cand.test_status === 'Suspicious' ? 'badge-danger' : 'badge-success'}`}>
                         {cand.test_status || 'Not Tested'}
                       </span>
                       {cand.Report_Path && (
-                        <div style={{ marginTop: '15px' }}>
-                          <h4 style={{ color: 'var(--primary)', marginBottom: '6px' }}>Resume</h4>
+                        <div style={{ marginTop: '16px' }}>
+                          <h4 style={{ color: 'var(--primary)', marginBottom: '8px', marginTop: 0 }}>Resume</h4>
                           <a href={`${apiBase}${cand.Report_Path}`} target="_blank" rel="noopener noreferrer"
-                            style={{ color: 'var(--accent)', fontSize: '0.85rem' }}>📄 View Resume PDF</a>
+                            style={{ color: 'var(--accent)', fontSize: '0.9rem', textDecoration: 'none' }}>📄 View Resume PDF</a>
                         </div>
                       )}
                     </div>
@@ -242,10 +249,10 @@ const AnalyseResults = ({ navigateTo }) => {
 
               {/* Answer Key Comparison */}
               {showAnswerKey === cand.Email && testAnswers.length > 0 && (
-                <div className="animate-fade-in" style={{ padding: '0 20px 20px', borderTop: '1px solid var(--border-light)' }}>
-                  <h4 style={{ color: 'var(--accent)', margin: '15px 0 10px' }}>Answer Key Comparison</h4>
+                <div className="animate-fade-in" style={{ padding: '24px 28px', borderTop: '1px solid var(--border-light)', background: 'rgba(255,255,255,0.02)' }}>
+                  <h4 style={{ color: 'var(--accent)', margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 700 }}>Answer Key Comparison</h4>
                   <div className="table-wrapper">
-                    <table className="table stack-mobile" style={{ fontSize: '0.85rem' }}>
+                    <table className="table stack-mobile" style={{ fontSize: '0.9rem' }}>
                       <thead>
                         <tr>
                           <th>#</th>
