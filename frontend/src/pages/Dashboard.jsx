@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, FileCheck, Target, TrendingUp, RefreshCw } from 'lucide-react';
+import { sortJdsNewestFirst } from '../utils/jdDropdown';
 
 const Dashboard = ({ navigateTo }) => {
   const [jds, setJds] = useState([]);
@@ -13,7 +14,7 @@ const Dashboard = ({ navigateTo }) => {
         const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/jd/all`);
         const data = await response.json();
         if (data.status === 'success') {
-          setJds(data.jds);
+          setJds(sortJdsNewestFirst(data.jds));
         }
       } catch (err) {
         console.error("Dashboard fetch error:", err);

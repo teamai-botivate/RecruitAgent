@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UploadCloud, Link as LinkIcon, BriefcaseIcon, Play, AlertCircle, FileText, Code } from 'lucide-react';
 import ResponsiveDropdown from '../components/ResponsiveDropdown';
-import { buildJdDropdownOption } from '../utils/jdDropdown';
+import { buildJdDropdownOption, sortJdsNewestFirst } from '../utils/jdDropdown';
 
 const ResumeScreening = ({ navigateTo }) => {
   const [jds, setJds] = useState([]);
@@ -49,7 +49,7 @@ const ResumeScreening = ({ navigateTo }) => {
       .then(res => res.json())
       .then(data => {
         if(data.status === 'success' && data.jds.length > 0) {
-          setJds(data.jds);
+          setJds(sortJdsNewestFirst(data.jds));
         }
       });
       

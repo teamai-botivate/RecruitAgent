@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CalendarCheck, MapPin, Clock, UserCheck, CheckCircle2, User } from 'lucide-react';
 import CandidateProfileModal from '../components/CandidateProfileModal';
 import ResponsiveDropdown from '../components/ResponsiveDropdown';
-import { buildJdDropdownOption } from '../utils/jdDropdown';
+import { buildJdDropdownOption, sortJdsNewestFirst } from '../utils/jdDropdown';
 
 const ScheduledInterviews = ({ navigateTo }) => {
   const [jds, setJds] = useState([]);
@@ -18,7 +18,7 @@ const ScheduledInterviews = ({ navigateTo }) => {
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
-          setJds(data.jds.filter(j => ['INTERVIEW_SCHEDULED', 'RESULTS_ANALYSED', 'APTITUDE_GENERATED', 'HIRED'].includes(j.state)));
+          setJds(sortJdsNewestFirst(data.jds.filter(j => ['INTERVIEW_SCHEDULED', 'RESULTS_ANALYSED', 'APTITUDE_GENERATED', 'HIRED'].includes(j.state))));
         }
       });
   }, []);

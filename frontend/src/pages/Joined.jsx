@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PartyPopper, Briefcase, Calendar, Mail, Award, Eye } from 'lucide-react';
 import CandidateProfileModal from '../components/CandidateProfileModal';
 import ResponsiveDropdown from '../components/ResponsiveDropdown';
-import { buildJdDropdownOption } from '../utils/jdDropdown';
+import { buildJdDropdownOption, sortJdsNewestFirst } from '../utils/jdDropdown';
 
 const Joined = () => {
   const [joined, setJoined] = useState([]);
@@ -17,7 +17,7 @@ const Joined = () => {
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
-          setJds(data.jds);
+          setJds(sortJdsNewestFirst(data.jds));
         }
       });
 

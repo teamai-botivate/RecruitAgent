@@ -47,10 +47,10 @@ const JDGenerator = ({ navigateTo }) => {
   };
 
   return (
-    <div className="animate-fade-in layout-split">
+    <div className="animate-fade-in layout-split jd-generator-layout">
       
       {/* JD Builder Form */}
-      <div className="card glass-panel" style={{ height: 'fit-content' }}>
+      <div className="card glass-panel jd-generator-panel" style={{ height: 'fit-content' }}>
         <div className="card-header">
           <h2 className="card-title"><PenTool size={20} color="var(--primary)" /> AI JD Builder</h2>
         </div>
@@ -58,7 +58,7 @@ const JDGenerator = ({ navigateTo }) => {
         <form onSubmit={handleGenerate}>
           {/* Company Details */}
           <h3 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)', marginBottom: '16px' }}>1. Company Profile</h3>
-          <div className="grid-2">
+          <div className="grid-2 jd-generator-grid">
             <div className="form-group">
               <label className="form-label">Company Name</label>
               <input type="text" name="companyName" className="form-control" value={formData.companyName} onChange={handleChange} required />
@@ -86,7 +86,7 @@ const JDGenerator = ({ navigateTo }) => {
             <input type="text" name="roleTitle" className="form-control" value={formData.roleTitle} onChange={handleChange} required style={{ borderColor: 'var(--accent)' }} />
           </div>
           
-          <div className="grid-2">
+          <div className="grid-2 jd-generator-grid">
             <div className="form-group">
               <label className="form-label">Experience Level</label>
               <input type="text" name="experience" className="form-control" value={formData.experience} onChange={handleChange} required />
@@ -122,20 +122,20 @@ const JDGenerator = ({ navigateTo }) => {
       </div>
 
       {/* Output Panel */}
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="card jd-generator-output" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div className="card-header">
           <h2 className="card-title">Generated Specification</h2>
           {jdId && <span className="badge badge-success">{jdId}</span>}
         </div>
         
-        <div style={{ flex: 1, background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', padding: '20px', overflowY: 'auto', border: '1px solid var(--border-light)' }}>
+        <div className="jd-generator-output-box" style={{ flex: 1, background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', padding: '20px', overflowY: 'auto', border: '1px solid var(--border-light)' }}>
           {loading ? (
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
               <div className="spinner" style={{ marginBottom: '16px' }}></div>
               <p>Generating professional job description...</p>
             </div>
           ) : generatedJD ? (
-            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'Inter', fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: 1.6 }}>
+            <pre className="jd-generator-pre" style={{ whiteSpace: 'pre-wrap', fontFamily: 'Inter', fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: 1.6 }}>
               {generatedJD}
             </pre>
           ) : (
@@ -146,7 +146,7 @@ const JDGenerator = ({ navigateTo }) => {
         </div>
         
         {generatedJD && (
-          <div style={{ display: 'flex', gap: '16px', marginTop: '20px' }}>
+          <div className="jd-generator-actions" style={{ display: 'flex', gap: '16px', marginTop: '20px' }}>
             <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => navigator.clipboard.writeText(generatedJD)}>
               <Copy size={18} /> Copy to Clipboard
             </button>

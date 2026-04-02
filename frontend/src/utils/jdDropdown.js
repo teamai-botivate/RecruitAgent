@@ -33,6 +33,17 @@ const shorten = (value, maxLength = 26) => {
   return `${value.slice(0, maxLength - 3)}...`;
 };
 
+const getCreatedSortValue = (jd) => {
+  const rawValue = getCreatedRaw(jd);
+  const parsed = rawValue ? new Date(rawValue) : null;
+  if (parsed && !Number.isNaN(parsed.getTime())) {
+    return parsed.getTime();
+  }
+
+  const fallbackText = rawValue ? rawValue.toString() : '';
+  return fallbackText ? Date.parse(fallbackText) || 0 : 0;
+};
+
 export const buildJdDropdownOption = (jd, config = {}) => {
   const { maxRoleLength = 26 } = config;
   const id = getSafeText(jd?.jd_id || jd?.JD_ID || jd?.id, 'N/A');
@@ -45,4 +56,16 @@ export const buildJdDropdownOption = (jd, config = {}) => {
     label: `${roleShort} | ${id} | ${createdText}`,
     fullLabel: `Role: ${roleFull} | JD ID: ${id} | Created: ${createdText}`
   };
+};
+
+export const sortJdsNewestFirst = (jds = []) => {
+  return [...jds].sort((left, right) => {
+    const rightCreated = getCreatedSortValue(right);
+    const leftCreated = getCreatedSortValue(left);
+    if (rightCreated !== leftCreated) return rightCreated - leftCreated;
+
+    const rightId = (right?.jd_id || right?.JD_ID || '').toString();
+    const leftId = (left?.jd_id || left?.JD_ID || '').toString();
+    return rightId.localeCompare(leftId);
+  });
 };

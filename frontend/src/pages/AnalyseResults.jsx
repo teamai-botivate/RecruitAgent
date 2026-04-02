@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart3, Eye, CheckSquare, FileText, ShieldAlert, Award, CheckCircle, XCircle, EyeOff, User } from 'lucide-react';
 import CandidateProfileModal from '../components/CandidateProfileModal';
 import ResponsiveDropdown from '../components/ResponsiveDropdown';
-import { buildJdDropdownOption } from '../utils/jdDropdown';
+import { buildJdDropdownOption, sortJdsNewestFirst } from '../utils/jdDropdown';
 
 const AnalyseResults = ({ navigateTo }) => {
   const [jds, setJds] = useState([]);
@@ -25,7 +25,7 @@ const AnalyseResults = ({ navigateTo }) => {
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
-          setJds(data.jds.filter(j => ['TEST_SENT', 'TEST_COMPLETED', 'RESULTS_ANALYSED'].includes(j.state)));
+          setJds(sortJdsNewestFirst(data.jds.filter(j => ['TEST_SENT', 'TEST_COMPLETED', 'RESULTS_ANALYSED'].includes(j.state))));
         }
       });
   }, []);

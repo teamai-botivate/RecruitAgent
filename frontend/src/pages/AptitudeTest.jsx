@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Code, Users, ArrowRight, CheckSquare, Square, Trash2, Edit3, Plus, Save, Sparkles, BookOpen, Settings, Eye, EyeOff, ChevronDown, ChevronUp, User } from 'lucide-react';
 import CandidateProfileModal from '../components/CandidateProfileModal';
 import ResponsiveDropdown from '../components/ResponsiveDropdown';
-import { buildJdDropdownOption } from '../utils/jdDropdown';
+import { buildJdDropdownOption, sortJdsNewestFirst } from '../utils/jdDropdown';
 
 const AptitudeTest = ({ navigateTo }) => {
   const [jds, setJds] = useState([]);
@@ -44,7 +44,7 @@ const AptitudeTest = ({ navigateTo }) => {
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
-          setJds(data.jds.filter(jd => jd.state !== 'JD_CREATED'));
+          setJds(sortJdsNewestFirst(data.jds.filter(jd => jd.state !== 'JD_CREATED')));
         }
       });
   }, []);
