@@ -1005,15 +1005,128 @@ a:hover { color: var(--accent); }
 }
 
 /* Joined page mobile action visibility */
+.joined-mobile-list {
+  display: none;
+}
+
+.joined-mobile-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.joined-mobile-card-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.joined-mobile-name-block {
+  min-width: 0;
+  flex: 1;
+}
+
+.joined-mobile-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.joined-mobile-email {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.joined-mobile-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.joined-mobile-meta-item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.joined-mobile-meta-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.joined-mobile-meta-value,
+.joined-mobile-score,
+.joined-mobile-date,
+.joined-mobile-hired-at {
+  color: var(--text-main);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.joined-mobile-score,
+.joined-mobile-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.joined-mobile-actions {
+  margin-top: 14px;
+}
+
 .joined-mobile-profile-btn {
   display: none;
 }
 
 @media (max-width: 768px) {
+  .joined-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  .joined-count-badge {
+    align-self: flex-start !important;
+  }
+
+  .joined-desktop-table {
+    display: none;
+  }
+
+  .joined-mobile-list {
+    display: block;
+  }
+
+  .joined-mobile-card-top {
+    flex-direction: column;
+  }
+
+  .joined-mobile-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
   .joined-mobile-profile-btn {
     display: inline-flex;
-    padding: 6px 10px;
-    font-size: 0.75rem;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    width: 100%;
+    justify-content: center;
   }
 
   .joined-actions-cell {
