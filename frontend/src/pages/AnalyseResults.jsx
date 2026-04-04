@@ -38,6 +38,42 @@ const AnalyseResults = ({ navigateTo }) => {
     return label === 'minor violation' || label === 'suspicious' || label === 'major violation';
   };
 
+  const getStatusMetrics = (statusValue) => {
+    const raw = String(statusValue || '');
+    const [, suffix = ''] = raw.split('|');
+    const parts = suffix.split(';').map(p => p.trim()).filter(Boolean);
+    const metrics = {
+      tab_switches: 0,
+      fullscreen_exits: 0,
+      face_missing: 0,
+      face_out: 0,
+      multi_face: 0,
+      long_face_missing: 0,
+      violations: 0,
+      face_left: 0,
+      face_right: 0,
+      face_up: 0,
+      face_down: 0,
+    };
+
+    parts.forEach((entry) => {
+      const [k, v] = entry.split('=').map(x => String(x || '').trim());
+      if (!k || !v) return;
+
+      if (k === 'violations') {
+        const [count] = v.split('/');
+        metrics.violations = Number.parseInt(count, 10) || 0;
+        return;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(metrics, k)) {
+        metrics[k] = Number.parseInt(v, 10) || 0;
+      }
+    });
+
+    return metrics;
+  };
+
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/jd/all`)
       .then(res => res.json())
@@ -175,6 +211,34 @@ const AnalyseResults = ({ navigateTo }) => {
     ...jds.map((jd) => buildJdDropdownOption(jd))
   ];
 
+  const proctoringTotals = candidates.reduce((acc, c) => {
+    const m = getStatusMetrics(c.test_status);
+    acc.violations += m.violations;
+    acc.tab_switches += m.tab_switches;
+    acc.fullscreen_exits += m.fullscreen_exits;
+    acc.face_missing += m.face_missing;
+    acc.face_out += m.face_out;
+    acc.multi_face += m.multi_face;
+    acc.long_face_missing += m.long_face_missing;
+    acc.face_left += m.face_left;
+    acc.face_right += m.face_right;
+    acc.face_up += m.face_up;
+    acc.face_down += m.face_down;
+    return acc;
+  }, {
+    violations: 0,
+    tab_switches: 0,
+    fullscreen_exits: 0,
+    face_missing: 0,
+    face_out: 0,
+    multi_face: 0,
+    long_face_missing: 0,
+    face_left: 0,
+    face_right: 0,
+    face_up: 0,
+    face_down: 0,
+  });
+
   return (
     <div className="animate-fade-in" style={{ maxWidth: '1100px', margin: '0 auto' }}>
       <header style={{ marginBottom: '32px' }}>
@@ -204,6 +268,18 @@ const AnalyseResults = ({ navigateTo }) => {
             <div className="stat-card">
               <div className="stat-icon" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }}><ShieldAlert size={24} /></div>
               <div className="stat-content"><h3>Flagged</h3><p>{candidates.filter(c => isFlaggedStatus(c.test_status)).length}</p></div>
+            </div>
+          </div>
+
+          <div className="grid-3" style={{ marginBottom: '24px' }}>
+            <div className="stat-card">
+              <div className="stat-content"><h3>Total Violations</h3><p>{proctoringTotals.violations}</p></div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-content"><h3>Tab/Fullscreen</h3><p>{proctoringTotals.tab_switches + proctoringTotals.fullscreen_exits}</p></div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-content"><h3>Face Direction Events</h3><p>{proctoringTotals.face_left + proctoringTotals.face_right + proctoringTotals.face_up + proctoringTotals.face_down}</p></div>
             </div>
           </div>
 

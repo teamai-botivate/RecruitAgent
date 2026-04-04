@@ -389,6 +389,13 @@ async def submit_test(data: SubmitAssessmentRequest, background_tasks: Backgroun
         face_out_of_frame_events = int(proctoring_summary.get("face_out_of_frame_events") or 0)
         multi_face_events = int(proctoring_summary.get("multi_face_events") or 0)
         long_face_missing_events = int(proctoring_summary.get("long_face_missing_events") or 0)
+        violation_count = int(proctoring_summary.get("violation_count") or 0)
+        violation_limit = int(proctoring_summary.get("violation_limit") or 3)
+        direction_counts = proctoring_summary.get("face_direction_counts") or {}
+        face_left = int(direction_counts.get("left") or 0)
+        face_right = int(direction_counts.get("right") or 0)
+        face_up = int(direction_counts.get("up") or 0)
+        face_down = int(direction_counts.get("down") or 0)
         event_count = int(proctoring_summary.get("event_count") or 0)
 
         computed_status = _compute_proctoring_status(
@@ -405,7 +412,8 @@ async def submit_test(data: SubmitAssessmentRequest, background_tasks: Backgroun
             f"tab_switches={tab_switches}; fullscreen_exits={fullscreen_exits}; "
             f"camera_denied={camera_denied}; face_missing={face_missing_events}; "
             f"face_out={face_out_of_frame_events}; multi_face={multi_face_events}; "
-            f"long_face_missing={long_face_missing_events}; events={event_count}"
+            f"long_face_missing={long_face_missing_events}; violations={violation_count}/{violation_limit}; "
+            f"face_left={face_left}; face_right={face_right}; face_up={face_up}; face_down={face_down}; events={event_count}"
         )
         proctoring_status = f"{computed_status} | {summary_suffix}"
 

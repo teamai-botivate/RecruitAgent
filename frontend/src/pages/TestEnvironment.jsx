@@ -57,8 +57,21 @@ const TestEnvironment = () => {
   const [starting, setStarting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const VIOLATION_LIMIT = 3;
+  const [violationCount, setViolationCount] = useState(0);
+  const [faceDirectionCounts, setFaceDirectionCounts] = useState({ left: 0, right: 0, up: 0, down: 0 });
+
+  const violationCountRef = useRef(0);
+  const autoSubmittedForViolationRef = useRef(false);
+  const offDirectionRef = useRef(null);
+
+  useEffect(() => {
+    violationCountRef.current = violationCount;
+  }, [violationCount]);
+
   const computeViolationStatus = () => {
     if (
+      violationCount >= VIOLATION_LIMIT ||
       cameraDenied > 0 ||
       tabSwitches >= 5 ||
       fullscreenExits >= 3 ||
@@ -98,6 +111,36 @@ const TestEnvironment = () => {
     ]));
   };
 
+  const classifyFaceDirection = (faceBox, video) => {
+    if (!faceBox || !video || !video.videoWidth || !video.videoHeight) return 'unknown';
+
+    const centerX = (faceBox.x + (faceBox.width / 2)) / video.videoWidth;
+    const centerY = (faceBox.y + (faceBox.height / 2)) / video.videoHeight;
+
+    if (centerX < 0.35) return 'left';
+    if (centerX > 0.65) return 'right';
+    if (centerY < 0.30) return 'up';
+    if (centerY > 0.74) return 'down';
+    return 'center';
+  };
+
+  const registerViolation = (eventType, severity, details) => {
+    setWarnings(prev => [...prev.slice(-9), `⚠️ ${details}`]);
+    recordProctorEvent(eventType, severity, details);
+
+    setViolationCount(prev => {
+      const next = prev + 1;
+      if (next >= VIOLATION_LIMIT && !autoSubmittedForViolationRef.current) {
+        autoSubmittedForViolationRef.current = true;
+        setTimeout(() => {
+          alert(`❌ Maximum violations reached (${VIOLATION_LIMIT}/${VIOLATION_LIMIT}). Auto-submitting your test.`);
+          handleAutoSubmit();
+        }, 0);
+      }
+      return next;
+    });
+  };
+
   // Mobile check
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
@@ -127,8 +170,7 @@ const TestEnvironment = () => {
       if (document.hidden) {
         setTabSwitches(prev => {
           const n = prev + 1;
-          setWarnings(w => [...w, `⚠️ Tab switch #${n} at ${new Date().toLocaleTimeString()}`]);
-          recordProctorEvent('tab_switch', 'medium', `Tab switch #${n}`);
+          registerViolation('tab_switch', 'high', `Tab switch #${n} at ${new Date().toLocaleTimeString()}`);
           return n;
         });
       }
@@ -138,8 +180,7 @@ const TestEnvironment = () => {
       if (!document.fullscreenElement) {
         setFullscreenExits(prev => {
           const n = prev + 1;
-          setWarnings(w => [...w, `⚠️ Exited Fullscreen: Warning #${n} at ${new Date().toLocaleTimeString()}`]);
-          recordProctorEvent('fullscreen_exit', 'high', `Fullscreen exited (warning #${n})`);
+          registerViolation('fullscreen_exit', 'high', `Exited fullscreen (warning #${n}) at ${new Date().toLocaleTimeString()}`);
           return n;
         });
         alert('⚠️ You exited fullscreen. This is recorded as a proctoring violation. Please return to fullscreen immediately.');
@@ -224,15 +265,13 @@ const TestEnvironment = () => {
           if (missingSecondsRef.current >= 3 && !faceMissingMinorRaisedRef.current) {
             faceMissingMinorRaisedRef.current = true;
             setFaceMissingEvents(prev => prev + 1);
-            setWarnings(prev => [...prev.slice(-9), `⚠️ Face not visible for ${missingSecondsRef.current}s`]);
-            recordProctorEvent('face_missing', 'medium', `Face not visible for ${missingSecondsRef.current}s`);
+            registerViolation('face_missing', 'medium', `Face not visible for ${missingSecondsRef.current}s`);
           }
 
           if (missingSecondsRef.current >= 10 && !faceMissingMajorRaisedRef.current) {
             faceMissingMajorRaisedRef.current = true;
             setLongFaceMissingEvents(prev => prev + 1);
-            setWarnings(prev => [...prev.slice(-9), `❌ Face absent for ${missingSecondsRef.current}s (major violation)`]);
-            recordProctorEvent('face_missing_long', 'critical', `Face absent for ${missingSecondsRef.current}s`);
+            registerViolation('face_missing_long', 'critical', `Face absent for ${missingSecondsRef.current}s`);
           }
 
           return;
@@ -250,8 +289,7 @@ const TestEnvironment = () => {
           if (!multiFaceActiveRef.current) {
             multiFaceActiveRef.current = true;
             setMultiFaceEvents(prev => prev + 1);
-            setWarnings(prev => [...prev.slice(-9), '❌ Multiple faces detected']);
-            recordProctorEvent('multiple_faces', 'critical', `Detected ${faces.length} faces`);
+            registerViolation('multiple_faces', 'critical', `Detected ${faces.length} faces`);
           }
           return;
         }
@@ -262,29 +300,38 @@ const TestEnvironment = () => {
         faceMissingMajorRaisedRef.current = false;
 
         const faceBox = faces[0]?.boundingBox;
-        const centered = isFaceCentered(faceBox, videoRef.current);
+        const direction = classifyFaceDirection(faceBox, videoRef.current);
 
-        if (!centered) {
-          setFaceTrackingState('Face out of frame');
+        if (direction !== 'center') {
+          setFaceTrackingState(`Face ${direction}`);
+
+          if (offDirectionRef.current !== direction) {
+            offDirectionRef.current = direction;
+            offFrameSecondsRef.current = 0;
+            faceOffMinorRaisedRef.current = false;
+            faceOffHighRaisedRef.current = false;
+          }
+
           offFrameSecondsRef.current += 1;
 
           if (offFrameSecondsRef.current >= 3 && !faceOffMinorRaisedRef.current) {
             faceOffMinorRaisedRef.current = true;
             setFaceOutOfFrameEvents(prev => prev + 1);
-            setWarnings(prev => [...prev.slice(-9), '⚠️ Keep your face centered in camera']);
-            recordProctorEvent('face_out_of_frame', 'medium', 'Face moved outside allowed frame');
+            setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
+            registerViolation(`face_${direction}`, 'medium', `Face moved ${direction} for ${offFrameSecondsRef.current}s`);
           }
 
           if (offFrameSecondsRef.current >= 8 && !faceOffHighRaisedRef.current) {
             faceOffHighRaisedRef.current = true;
             setFaceOutOfFrameEvents(prev => prev + 1);
-            setWarnings(prev => [...prev.slice(-9), '⚠️ Face out of frame for too long']);
-            recordProctorEvent('face_out_of_frame_long', 'high', `Out of frame for ${offFrameSecondsRef.current}s`);
+            setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
+            registerViolation(`face_${direction}_long`, 'high', `Face remained ${direction} for too long (${offFrameSecondsRef.current}s)`);
           }
           return;
         }
 
         setFaceTrackingState('Face aligned');
+        offDirectionRef.current = null;
         offFrameSecondsRef.current = 0;
         faceOffMinorRaisedRef.current = false;
         faceOffHighRaisedRef.current = false;
@@ -487,6 +534,9 @@ const TestEnvironment = () => {
             face_out_of_frame_events: faceOutOfFrameEvents,
             multi_face_events: multiFaceEvents,
             long_face_missing_events: longFaceMissingEvents,
+            violation_count: violationCount,
+            violation_limit: VIOLATION_LIMIT,
+            face_direction_counts: faceDirectionCounts,
             face_tracking_supported: faceTrackingSupported,
             event_count: proctoringEvents.length,
           },
@@ -721,6 +771,10 @@ const TestEnvironment = () => {
           <div style={{ height: '4px', background: '#1e293b', borderRadius: '2px' }}>
             <div style={{ width: `${totalQuestions > 0 ? (totalAnswered / totalQuestions) * 100 : 0}%`, height: '100%', background: 'linear-gradient(90deg, #6366f1, #10b981)', borderRadius: '2px', transition: 'width 0.3s' }}></div>
           </div>
+
+          <div className={`test-violation-banner ${violationCount >= VIOLATION_LIMIT ? 'danger' : violationCount > 0 ? 'warn' : 'safe'}`}>
+            Violations: {violationCount}/{VIOLATION_LIMIT}
+          </div>
         </div>
 
         {/* Question Navigator */}
@@ -772,6 +826,9 @@ const TestEnvironment = () => {
             </div>
             <div style={{ fontSize: '0.75rem', color: faceTrackingSupported ? '#38bdf8' : '#94a3b8', fontWeight: 600, marginBottom: '4px' }}>
               <Camera size={12} style={{ verticalAlign: 'middle' }} /> Face Tracking: {faceTrackingSupported ? faceTrackingState : 'Unsupported in this browser'}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '4px' }}>
+              face-direction: L{faceDirectionCounts.left} R{faceDirectionCounts.right} U{faceDirectionCounts.up} D{faceDirectionCounts.down}
             </div>
             {faceTrackingSupported && (
               <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
