@@ -19,6 +19,7 @@ const AnalyseResults = ({ navigateTo }) => {
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [showAnswerKey, setShowAnswerKey] = useState(null);
   const [selectedCandidateModal, setSelectedCandidateModal] = useState(null);
+  const [violationDetailsCandidate, setViolationDetailsCandidate] = useState(null);
 
   const getStatusLabel = (statusValue) => {
     const raw = String(statusValue || '').trim();
@@ -72,6 +73,14 @@ const AnalyseResults = ({ navigateTo }) => {
     });
 
     return metrics;
+  };
+
+  const getViolationSeverity = (statusValue) => {
+    const label = getStatusLabel(statusValue || '').toLowerCase();
+    if (label === 'major violation') return { level: 'MAJOR', color: '#ef4444', bgColor: 'rgba(239,68,68,0.1)' };
+    if (label === 'suspicious') return { level: 'SUSPICIOUS', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
+    if (label === 'minor violation') return { level: 'MINOR', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
+    return { level: 'NORMAL', color: '#10b981', bgColor: 'rgba(16,185,129,0.1)' };
   };
 
   useEffect(() => {
@@ -265,22 +274,6 @@ const AnalyseResults = ({ navigateTo }) => {
               <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.1)', color: 'var(--success)' }}><Award size={24} /></div>
               <div className="stat-content"><h3>Selected for Interview</h3><p>{selectedForInterview.length}</p></div>
             </div>
-            <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }}><ShieldAlert size={24} /></div>
-              <div className="stat-content"><h3>Flagged</h3><p>{candidates.filter(c => isFlaggedStatus(c.test_status)).length}</p></div>
-            </div>
-          </div>
-
-          <div className="grid-3" style={{ marginBottom: '24px' }}>
-            <div className="stat-card">
-              <div className="stat-content"><h3>Total Violations</h3><p>{proctoringTotals.violations}</p></div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-content"><h3>Tab/Fullscreen</h3><p>{proctoringTotals.tab_switches + proctoringTotals.fullscreen_exits}</p></div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-content"><h3>Face Direction Events</h3><p>{proctoringTotals.face_left + proctoringTotals.face_right + proctoringTotals.face_up + proctoringTotals.face_down}</p></div>
-            </div>
           </div>
 
           {/* Candidate Results Cards */}
@@ -319,6 +312,32 @@ const AnalyseResults = ({ navigateTo }) => {
                     <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 700 }}>Score</div>
                     <div style={{ fontSize: '1.8rem', fontWeight: 700, color: parseFloat(cand.Score) >= 50 ? 'var(--success)' : 'var(--danger)' }}>{cand.Score}</div>
                   </div>
+
+                  {/* Violation Severity Button */}
+                  {cand.test_status && (
+                    <button
+                      onClick={() => setViolationDetailsCandidate(violationDetailsCandidate?.Email === cand.Email ? null : cand)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '12px 16px',
+                        borderRadius: '10px',
+                        border: `2px solid ${getViolationSeverity(cand.test_status).color}`,
+                        background: getViolationSeverity(cand.test_status).bgColor,
+                        color: getViolationSeverity(cand.test_status).color,
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        transition: 'all 0.3s',
+                        minWidth: '110px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                      }}>
+                        {getViolationSeverity(cand.test_status).level}
+                      </button>
+                  )}
                 </div>
 
                 {/* Action Buttons */}
@@ -334,6 +353,39 @@ const AnalyseResults = ({ navigateTo }) => {
                     <User size={16} /> View Full Profile
                   </button>
                 </div>
+
+              {/* Violation Details Section */}
+              {violationDetailsCandidate?.Email === cand.Email && (
+                <div className="animate-fade-in" style={{ padding: '24px 28px 28px', borderTop: '1px solid var(--border-light)', background: 'rgba(239,68,68,0.03)', marginTop: '20px' }}>
+                  <h4 style={{ color: 'var(--danger)', margin: '0 0 16px', fontSize: '1.05rem', fontWeight: 700 }}>🚨 Violation Details</h4>
+                  <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: `2px solid ${getViolationSeverity(cand.test_status).color}`, marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Severity Level</span>
+                      <span style={{ fontSize: '1rem', fontWeight: 700, color: getViolationSeverity(cand.test_status).color, textTransform: 'uppercase' }}>
+                        {getViolationSeverity(cand.test_status).level}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      <p style={{ margin: '0 0 8px' }}>📊 <strong>Status:</strong> {getStatusLabel(cand.test_status)}</p>
+                      {(() => {
+                        const metrics = getStatusMetrics(cand.test_status);
+                        return (
+                          <>
+                            <p style={{ margin: '0 0 8px' }}>📌 <strong>Violations:</strong> {metrics.violations}/3</p>
+                            <p style={{ margin: '0 0 8px' }}>🔄 <strong>Tab Switches:</strong> {metrics.tab_switches}</p>
+                            <p style={{ margin: '0 0 8px' }}>🖥️ <strong>Fullscreen Exits:</strong> {metrics.fullscreen_exits}</p>
+                            <p style={{ margin: '0 0 8px' }}>👁️ <strong>Face Missing Events:</strong> {metrics.face_missing}</p>
+                            <p style={{ margin: '0 0 8px' }}>📍 <strong>Face Out of Frame:</strong> {metrics.face_out}</p>
+                            <p style={{ margin: '0 0 8px' }}>👥 <strong>Multiple Faces:</strong> {metrics.multi_face}</p>
+                            <p style={{ margin: '0 0 8px' }}>⏱️ <strong>Long Face Missing:</strong> {metrics.long_face_missing}</p>
+                            <p style={{ margin: 0 }}>↔️ <strong>Face Directions:</strong> L{metrics.face_left} R{metrics.face_right} U{metrics.face_up} D{metrics.face_down}</p>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
               </div>
 
               {expandedCandidate === idx && (

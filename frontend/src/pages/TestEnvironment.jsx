@@ -233,27 +233,37 @@ const TestEnvironment = () => {
   useEffect(() => {
     if (phase !== 'test' || !cameraActive) return;
 
-    if (!('FaceDetector' in window)) {
+    if (!window.ml5) {
       setFaceTrackingSupported(false);
       setFaceTrackingState('Unsupported');
       return;
     }
 
     setFaceTrackingSupported(true);
-    if (!faceDetectorRef.current) {
-      faceDetectorRef.current = new window.FaceDetector({ maxDetectedFaces: 2, fastMode: true });
-    }
+    setFaceTrackingState('Initializing...');
 
-    setFaceTrackingState('Monitoring');
+    let poseNet;
+    const initPoseNet = async () => {
+      try {
+        poseNet = await window.ml5.poseNet(videoRef.current, { maxPoseDetections: 2 });
+      } catch (err) {
+        console.error('PoseNet init failed:', err);
+        setFaceTrackingSupported(false);
+        setFaceTrackingState('Tracking unavailable');
+      }
+    };
+
+    initPoseNet();
+
     faceCheckIntervalRef.current = setInterval(async () => {
-      if (faceDetectBusyRef.current) return;
-      if (!videoRef.current || videoRef.current.readyState < 2) return;
+      if (faceDetectBusyRef.current || !poseNet || !videoRef.current) return;
 
       faceDetectBusyRef.current = true;
       try {
-        const faces = await faceDetectorRef.current.detect(videoRef.current);
+        const poses = await poseNet.estimateSinglePose(videoRef.current, { flipHorizontal: true });
+        const pose = poses?.pose;
 
-        if (!faces || faces.length === 0) {
+        if (!pose || !pose.keypoints || pose.keypoints.length === 0) {
           setFaceTrackingState('Face not detected');
           missingSecondsRef.current += 1;
           offFrameSecondsRef.current = 0;
@@ -272,68 +282,83 @@ const TestEnvironment = () => {
             setLongFaceMissingEvents(prev => prev + 1);
             registerViolation('face_missing_long', 'critical', `Face absent for ${missingSecondsRef.current}s`);
           }
-
           return;
         }
 
-        if (faces.length > 1) {
-          setFaceTrackingState('Multiple faces detected');
-          missingSecondsRef.current = 0;
-          offFrameSecondsRef.current = 0;
+        const nose = pose.keypoints.find(kp => kp.part === 'nose');
+        const leftEye = pose.keypoints.find(kp => kp.part === 'leftEye');
+        const rightEye = pose.keypoints.find(kp => kp.part === 'rightEye');
+        const leftEar = pose.keypoints.find(kp => kp.part === 'leftEar');
+        const rightEar = pose.keypoints.find(kp => kp.part === 'rightEar');
+
+        const MIN_CONFIDENCE = 0.3;
+        const bothEyesVisible = leftEye?.score > MIN_CONFIDENCE && rightEye?.score > MIN_CONFIDENCE;
+        const bothEarsVisible = leftEar?.score > MIN_CONFIDENCE && rightEar?.score > MIN_CONFIDENCE;
+
+        if (!bothEyesVisible) {
+          if (!faceMissingMinorRaisedRef.current) {
+            faceMissingMinorRaisedRef.current = true;
+            registerViolation('eyes_not_visible', 'medium', `Eyes are not both visible`);
+          }
+        } else {
           faceMissingMinorRaisedRef.current = false;
+        }
+
+        if (!bothEarsVisible) {
+          if (!faceMissingMajorRaisedRef.current) {
+            faceMissingMajorRaisedRef.current = true;
+            registerViolation('ears_not_visible', 'medium', `Ears are not both visible`);
+          }
+        } else {
           faceMissingMajorRaisedRef.current = false;
+        }
+
+        if (nose?.score > MIN_CONFIDENCE) {
+          const video = videoRef.current;
+          const centerX = nose.position.x / video.videoWidth;
+          const centerY = nose.position.y / video.videoHeight;
+
+          let direction = 'center';
+          if (centerX < 0.35) direction = 'left';
+          else if (centerX > 0.65) direction = 'right';
+          else if (centerY < 0.30) direction = 'up';
+          else if (centerY > 0.74) direction = 'down';
+
+          if (direction !== 'center') {
+            setFaceTrackingState(`Face ${direction}`);
+
+            if (offDirectionRef.current !== direction) {
+              offDirectionRef.current = direction;
+              offFrameSecondsRef.current = 0;
+              faceOffMinorRaisedRef.current = false;
+              faceOffHighRaisedRef.current = false;
+            }
+
+            offFrameSecondsRef.current += 1;
+
+            if (offFrameSecondsRef.current >= 3 && !faceOffMinorRaisedRef.current) {
+              faceOffMinorRaisedRef.current = true;
+              setFaceOutOfFrameEvents(prev => prev + 1);
+              setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
+              registerViolation(`face_${direction}`, 'medium', `Face moved ${direction} for ${offFrameSecondsRef.current}s`);
+            }
+
+            if (offFrameSecondsRef.current >= 8 && !faceOffHighRaisedRef.current) {
+              faceOffHighRaisedRef.current = true;
+              setFaceOutOfFrameEvents(prev => prev + 1);
+              setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
+              registerViolation(`face_${direction}_long`, 'high', `Face remained ${direction} for too long (${offFrameSecondsRef.current}s)`);
+            }
+            return;
+          }
+
+          setFaceTrackingState('Face aligned');
+          offDirectionRef.current = null;
+          offFrameSecondsRef.current = 0;
           faceOffMinorRaisedRef.current = false;
           faceOffHighRaisedRef.current = false;
-
-          if (!multiFaceActiveRef.current) {
-            multiFaceActiveRef.current = true;
-            setMultiFaceEvents(prev => prev + 1);
-            registerViolation('multiple_faces', 'critical', `Detected ${faces.length} faces`);
-          }
-          return;
+          missingSecondsRef.current = 0;
         }
-
-        multiFaceActiveRef.current = false;
-        missingSecondsRef.current = 0;
-        faceMissingMinorRaisedRef.current = false;
-        faceMissingMajorRaisedRef.current = false;
-
-        const faceBox = faces[0]?.boundingBox;
-        const direction = classifyFaceDirection(faceBox, videoRef.current);
-
-        if (direction !== 'center') {
-          setFaceTrackingState(`Face ${direction}`);
-
-          if (offDirectionRef.current !== direction) {
-            offDirectionRef.current = direction;
-            offFrameSecondsRef.current = 0;
-            faceOffMinorRaisedRef.current = false;
-            faceOffHighRaisedRef.current = false;
-          }
-
-          offFrameSecondsRef.current += 1;
-
-          if (offFrameSecondsRef.current >= 3 && !faceOffMinorRaisedRef.current) {
-            faceOffMinorRaisedRef.current = true;
-            setFaceOutOfFrameEvents(prev => prev + 1);
-            setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
-            registerViolation(`face_${direction}`, 'medium', `Face moved ${direction} for ${offFrameSecondsRef.current}s`);
-          }
-
-          if (offFrameSecondsRef.current >= 8 && !faceOffHighRaisedRef.current) {
-            faceOffHighRaisedRef.current = true;
-            setFaceOutOfFrameEvents(prev => prev + 1);
-            setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
-            registerViolation(`face_${direction}_long`, 'high', `Face remained ${direction} for too long (${offFrameSecondsRef.current}s)`);
-          }
-          return;
-        }
-
-        setFaceTrackingState('Face aligned');
-        offDirectionRef.current = null;
-        offFrameSecondsRef.current = 0;
-        faceOffMinorRaisedRef.current = false;
-        faceOffHighRaisedRef.current = false;
       } catch (err) {
         setFaceTrackingState('Tracking paused');
       } finally {
@@ -345,6 +370,9 @@ const TestEnvironment = () => {
       if (faceCheckIntervalRef.current) {
         clearInterval(faceCheckIntervalRef.current);
         faceCheckIntervalRef.current = null;
+      }
+      if (poseNet) {
+        poseNet.dispose?.();
       }
     };
   }, [phase, cameraActive]);
