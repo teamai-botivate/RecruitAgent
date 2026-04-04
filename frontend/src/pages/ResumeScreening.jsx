@@ -174,6 +174,7 @@ const ResumeScreening = ({ navigateTo }) => {
     ? results.rejected_count
     : (results?.rejected_candidates?.length || 0);
   const analyzedCount = (results?.candidates?.length || 0) + rejectedCount;
+  const autoRejectedCount = nonSelectedCandidates.length + rejectedCount;
 
   return (
     <div className="animate-fade-in layout-split-uneven">
@@ -310,7 +311,7 @@ const ResumeScreening = ({ navigateTo }) => {
                 </div>
                 <div style={{ flex: 1, padding: '16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px' }}>
                   <h3 style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--danger)', marginBottom: '5px' }}>Auto-Rejected</h3>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{rejectedCount}</div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{autoRejectedCount}</div>
                 </div>
               </div>
 
