@@ -43,6 +43,7 @@ const TestEnvironment = () => {
   const faceOffMinorRaisedRef = useRef(false);
   const faceOffHighRaisedRef = useRef(false);
   const poseNetRef = useRef(null);
+  const latestPoseRef = useRef(null);
 
   const [mcqAnswers, setMcqAnswers] = useState({});
   const [codingAnswers, setCodingAnswers] = useState({});
@@ -278,6 +279,12 @@ const TestEnvironment = () => {
     const initPoseNet = async () => {
       try {
         poseNetRef.current = await window.ml5.poseNet(videoRef.current, { maxPoseDetections: 2 });
+        if (typeof poseNetRef.current.on === 'function') {
+          poseNetRef.current.on('pose', (results) => {
+            const first = Array.isArray(results) ? results[0] : null;
+            latestPoseRef.current = first?.pose || null;
+          });
+        }
         setFaceTrackingState('Monitoring');
       } catch (err) {
         console.error('PoseNet init failed:', err);
@@ -292,11 +299,11 @@ const TestEnvironment = () => {
 
         faceDetectBusyRef.current = true;
         try {
-          let pose = null;
-          if (typeof poseNetRef.current.singlePose === 'function') {
+          let pose = latestPoseRef.current;
+          if (!pose && typeof poseNetRef.current.singlePose === 'function') {
             const single = await poseNetRef.current.singlePose(videoRef.current);
             pose = Array.isArray(single) ? single[0] : single;
-          } else if (typeof poseNetRef.current.estimateSinglePose === 'function') {
+          } else if (!pose && typeof poseNetRef.current.estimateSinglePose === 'function') {
             const estimated = await poseNetRef.current.estimateSinglePose(videoRef.current, { flipHorizontal: true });
             pose = estimated?.pose || estimated;
           }
@@ -415,6 +422,7 @@ const TestEnvironment = () => {
         clearInterval(faceCheckIntervalRef.current);
         faceCheckIntervalRef.current = null;
       }
+      latestPoseRef.current = null;
       if (poseNetRef.current) {
         poseNetRef.current.dispose?.();
         poseNetRef.current = null;
