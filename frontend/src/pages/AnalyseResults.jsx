@@ -20,8 +20,26 @@ const AnalyseResults = ({ navigateTo }) => {
   const [showAnswerKey, setShowAnswerKey] = useState(null);
   const [selectedCandidateModal, setSelectedCandidateModal] = useState(null);
   const [violationDetailsCandidate, setViolationDetailsCandidate] = useState(null);
+  const [violationEventsMap, setViolationEventsMap] = useState({});
+  const [loadingViolations, setLoadingViolations] = useState({});
 
   const getStatusLabel = (statusValue) => {
+      const fetchViolationEvents = async (jdId, email) => {
+        if (violationEventsMap[email]) return; // Already fetched
+    
+        setLoadingViolations(prev => ({ ...prev, [email]: true }));
+        try {
+          const res = await fetch(`${apiBase}/test/proctoring/${jdId}/${email}`);
+          const data = await res.json();
+          setViolationEventsMap(prev => ({ ...prev, [email]: data.events || [] }));
+        } catch (err) {
+          console.error('Error fetching violation events:', err);
+          setViolationEventsMap(prev => ({ ...prev, [email]: [] }));
+        } finally {
+          setLoadingViolations(prev => ({ ...prev, [email]: false }));
+        }
+      };
+
     const raw = String(statusValue || '').trim();
     if (!raw) return 'Pending';
     return raw.split('|')[0].trim();
@@ -316,7 +334,14 @@ const AnalyseResults = ({ navigateTo }) => {
                   {/* Violation Severity Button */}
                   {cand.test_status && (
                     <button
-                      onClick={() => setViolationDetailsCandidate(violationDetailsCandidate?.Email === cand.Email ? null : cand)}
+                      onClick={async () => {
+                        if (violationDetailsCandidate?.Email === cand.Email) {
+                          setViolationDetailsCandidate(null);
+                        } else {
+                          await fetchViolationEvents(selectedJd, cand.Email);
+                          setViolationDetailsCandidate(cand);
+                        }
+                      }}
                       style={{
                         display: 'flex',
                         flexDirection: 'column',
@@ -358,6 +383,35 @@ const AnalyseResults = ({ navigateTo }) => {
               {violationDetailsCandidate?.Email === cand.Email && (
                 <div className="animate-fade-in" style={{ padding: '24px 28px 28px', borderTop: '1px solid var(--border-light)', background: 'rgba(239,68,68,0.03)', marginTop: '20px' }}>
                   <h4 style={{ color: 'var(--danger)', margin: '0 0 16px', fontSize: '1.05rem', fontWeight: 700 }}>🚨 Violation Details</h4>
+                  {loadingViolations[cand.Email] ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading violation events...</div>
+                  ) : (violationEventsMap[cand.Email] || []).length > 0 ? (
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                        <strong>📜 Event Timeline ({(violationEventsMap[cand.Email] || []).length} events):</strong>
+                      </div>
+                      <div style={{ background: 'var(--bg-dark)', borderRadius: '8px', maxHeight: '300px', overflowY: 'auto', padding: '12px' }}>
+                        {(violationEventsMap[cand.Email] || []).map((event, idx) => (
+                          <div key={idx} style={{ marginBottom: '10px', paddingBottom: '10px', borderBottom: idx < (violationEventsMap[cand.Email] || []).length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                              <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', background: event.severity === 'critical' ? 'rgba(239,68,68,0.3)' : event.severity === 'high' ? 'rgba(245,158,11,0.3)' : 'rgba(99,102,241,0.3)', color: event.severity === 'critical' ? '#ef4444' : event.severity === 'high' ? '#f59e0b' : '#6366f1' }}>
+                                {event.severity || 'info'}
+                              </span>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>{event.event_type}</span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                {event.event_time ? new Date(event.event_time).toLocaleTimeString() : ''}
+                              </span>
+                            </div>
+                            <p style={{ margin: '0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{event.details}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '12px', background: 'var(--bg-input)', borderRadius: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                      No violation events recorded.
+                    </div>
+                  )}
                   <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: `2px solid ${getViolationSeverity(cand.test_status).color}`, marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                       <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Severity Level</span>
