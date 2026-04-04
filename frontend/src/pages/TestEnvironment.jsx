@@ -133,8 +133,7 @@ const TestEnvironment = () => {
       if (next >= VIOLATION_LIMIT && !autoSubmittedForViolationRef.current) {
         autoSubmittedForViolationRef.current = true;
         setTimeout(() => {
-          alert(`❌ Maximum violations reached (${VIOLATION_LIMIT}/${VIOLATION_LIMIT}). Auto-submitting your test.`);
-          handleAutoSubmit();
+          handleAutoSubmit('violation_limit');
         }, 0);
       }
       return next;
@@ -564,7 +563,14 @@ const TestEnvironment = () => {
     }
   };
 
-  const handleAutoSubmit = () => { alert('⏰ Time is up! Auto-submitting.'); submitTest(); };
+  const handleAutoSubmit = (reason = 'time_up') => {
+    if (reason === 'violation_limit') {
+      alert(`❌ Maximum violations reached (${VIOLATION_LIMIT}/${VIOLATION_LIMIT}). Auto-submitting your test.`);
+    } else {
+      alert('⏰ Time is up! Auto-submitting.');
+    }
+    submitTest();
+  };
   const handleManualSubmit = () => { if (window.confirm('Submit your test? You cannot change answers after.')) submitTest(); };
 
   if (loading) {
@@ -715,9 +721,12 @@ const TestEnvironment = () => {
   const codingQs = testData?.coding || [];
   const totalAnswered = Object.keys(mcqAnswers).length + Object.keys(codingAnswers).filter(k => codingAnswers[k]?.trim()).length;
   const totalQuestions = mcqs.length + codingQs.length;
+  const violationVisualLevel = violationCount >= VIOLATION_LIMIT ? 'danger' : violationCount >= 2 ? 'warn' : violationCount > 0 ? 'mild' : 'none';
 
   return (
-    <div className="test-environment-container" style={{ display: 'flex', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', position: 'relative' }}>
+    <div className={`test-environment-container violation-${violationVisualLevel}`} style={{ display: 'flex', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', position: 'relative' }}>
+
+      {violationVisualLevel !== 'none' && <div className={`test-violation-overlay ${violationVisualLevel}`} />}
       
       {/* Mobile overlay */}
       {sidebarOpen && isMobile && (

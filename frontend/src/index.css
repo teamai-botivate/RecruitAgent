@@ -1192,6 +1192,36 @@ a:hover { color: var(--accent); }
   border-color: rgba(239, 68, 68, 0.35);
 }
 
+.test-violation-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 120;
+  transition: background 220ms ease;
+}
+
+.test-violation-overlay.mild {
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.test-violation-overlay.warn {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.test-violation-overlay.danger {
+  background: rgba(239, 68, 68, 0.18);
+  animation: test-violation-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes test-violation-pulse {
+  from {
+    background: rgba(239, 68, 68, 0.14);
+  }
+  to {
+    background: rgba(239, 68, 68, 0.24);
+  }
+}
+
 @media (max-width: 768px) {
   .joined-header {
     flex-direction: column;

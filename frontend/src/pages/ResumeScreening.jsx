@@ -168,6 +168,13 @@ const ResumeScreening = ({ navigateTo }) => {
     ...jds.map((jd) => buildJdDropdownOption(jd))
   ];
 
+  const shortlistedCandidates = results?.candidates?.filter((c) => c.is_selected) || [];
+  const nonSelectedCandidates = results?.candidates?.filter((c) => !c.is_selected) || [];
+  const rejectedCount = Number.isFinite(results?.rejected_count)
+    ? results.rejected_count
+    : (results?.rejected_candidates?.length || 0);
+  const analyzedCount = (results?.candidates?.length || 0) + rejectedCount;
+
   return (
     <div className="animate-fade-in layout-split-uneven">
       
@@ -295,24 +302,24 @@ const ResumeScreening = ({ navigateTo }) => {
               <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ flex: 1, padding: '16px', background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '8px' }}>
                   <h3 style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '5px' }}>Analyzed</h3>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{results.candidates.length + results.rejected_count}</div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{analyzedCount}</div>
                 </div>
                 <div style={{ flex: 1, padding: '16px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px' }}>
                   <h3 style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--success)', marginBottom: '5px' }}>Shortlisted</h3>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{results.candidates.filter(c => c.score.breakdown.Final >= 50).length}</div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{shortlistedCandidates.length}</div>
                 </div>
                 <div style={{ flex: 1, padding: '16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px' }}>
                   <h3 style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--danger)', marginBottom: '5px' }}>Auto-Rejected</h3>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{results.rejected_count}</div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{rejectedCount}</div>
                 </div>
               </div>
 
               {/* Shortlisted Candidates (Top K) */}
               <div style={{ marginBottom: '30px' }}>
                 <h3 style={{ color: 'var(--success)', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', marginBottom: '20px' }}>
-                  Top {results.candidates.filter(c => c.is_selected).length} Candidates Selected
+                  Top {shortlistedCandidates.length} Candidates Selected
                 </h3>
-                {results.candidates.filter(c => c.is_selected).map((cand, idx) => (
+                {shortlistedCandidates.map((cand, idx) => (
                   <div key={`short-${idx}`} className="resp-screening-card" style={{ padding: '20px', background: 'var(--bg-input)', border: '1px solid var(--primary)', borderRadius: '8px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr auto', flexWrap: 'wrap', gap: '20px', boxShadow: '0 4px 15px rgba(99, 102, 241, 0.1)' }}>
                     <div style={{ flex: '1 1 250px', minWidth: 0 }}>
                       <h3 style={{ fontSize: '1.2rem', margin: '0 0 5px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -350,12 +357,12 @@ const ResumeScreening = ({ navigateTo }) => {
               </div>
 
               {/* Not Selected Candidates */}
-              {(results.candidates.filter(c => !c.is_selected).length > 0 || (results.rejected_candidates && results.rejected_candidates.length > 0)) && (
+              {(nonSelectedCandidates.length > 0 || (results.rejected_candidates && results.rejected_candidates.length > 0)) && (
                 <div>
                   <h3 style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-light)', paddingBottom: '10px', marginBottom: '20px' }}>
                     Other Interviewed Candidates (Not Selected)
                   </h3>
-                  {results.candidates.filter(c => !c.is_selected).map((cand, idx) => (
+                  {nonSelectedCandidates.map((cand, idx) => (
                     <div key={`rej-${idx}`} className="resp-screening-card" style={{ padding: '15px', background: 'var(--bg-dark)', border: '1px solid var(--border-light)', borderRadius: '8px', marginBottom: '12px', display: 'grid', gridTemplateColumns: '1fr auto', justifyContent: 'space-between', opacity: 0.7, gap: '12px' }}>
                       <div>
                         <h4 style={{ margin: '0 0 5px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -408,7 +415,7 @@ const ResumeScreening = ({ navigateTo }) => {
                     if (!confirmAction) return;
                     try {
                       // 1. Mark selected candidates in the DB
-                      const selectedEmails = results.candidates.filter(c => c.is_selected).map(c => c.email).filter(Boolean);
+                      const selectedEmails = shortlistedCandidates.map(c => c.email).filter(Boolean);
                       if (selectedEmails.length > 0) {
                         await fetch(`http://localhost:8000/jd/${selectedJd}/candidates/shortlist`, {
                           method: "POST",
@@ -421,7 +428,7 @@ const ResumeScreening = ({ navigateTo }) => {
                       const res = await fetch(`http://localhost:8000/jd/update_state?jd_id=${selectedJd}&new_state=SCREENING_COMPLETE`, { method: "POST" });
                       if (res.ok) {
                          // 3. Send rejection emails to not-selected candidates
-                         const rejected = results.candidates.filter(c => !c.is_selected);
+                         const rejected = nonSelectedCandidates;
                          if (rejected.length > 0) {
                            const jdData = jds.find(j => j.jd_id === selectedJd);
                            await fetch('http://localhost:8000/test/send-rejection', {
