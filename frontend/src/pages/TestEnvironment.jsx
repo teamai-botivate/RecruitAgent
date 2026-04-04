@@ -44,6 +44,10 @@ const TestEnvironment = () => {
   const faceOffHighRaisedRef = useRef(false);
   const poseNetRef = useRef(null);
   const latestPoseRef = useRef(null);
+  const eyeMissingSecondsRef = useRef(0);
+  const earMissingSecondsRef = useRef(0);
+  const eyeViolationRaisedRef = useRef(false);
+  const earViolationRaisedRef = useRef(false);
 
   const [mcqAnswers, setMcqAnswers] = useState({});
   const [codingAnswers, setCodingAnswers] = useState({});
@@ -338,26 +342,30 @@ const TestEnvironment = () => {
           const leftEar = pose.keypoints.find(kp => kp.part === 'leftEar');
           const rightEar = pose.keypoints.find(kp => kp.part === 'rightEar');
 
-          const MIN_CONFIDENCE = 0.3;
+          const MIN_CONFIDENCE = 0.35;
           const bothEyesVisible = (leftEye?.score || 0) > MIN_CONFIDENCE && (rightEye?.score || 0) > MIN_CONFIDENCE;
           const bothEarsVisible = (leftEar?.score || 0) > MIN_CONFIDENCE && (rightEar?.score || 0) > MIN_CONFIDENCE;
 
           if (!bothEyesVisible) {
-            if (!faceMissingMinorRaisedRef.current) {
-              faceMissingMinorRaisedRef.current = true;
-              registerViolation('eyes_not_visible', 'medium', `Eyes are not both visible`);
+            eyeMissingSecondsRef.current += 1;
+            if (eyeMissingSecondsRef.current >= 4 && !eyeViolationRaisedRef.current) {
+              eyeViolationRaisedRef.current = true;
+              registerViolation('eyes_not_visible', 'medium', `Eyes not clearly visible for ${eyeMissingSecondsRef.current}s`);
             }
           } else {
-            faceMissingMinorRaisedRef.current = false;
+            eyeMissingSecondsRef.current = 0;
+            eyeViolationRaisedRef.current = false;
           }
 
           if (!bothEarsVisible) {
-            if (!faceMissingMajorRaisedRef.current) {
-              faceMissingMajorRaisedRef.current = true;
-              registerViolation('ears_not_visible', 'medium', `Ears are not both visible`);
+            earMissingSecondsRef.current += 1;
+            if (earMissingSecondsRef.current >= 4 && !earViolationRaisedRef.current) {
+              earViolationRaisedRef.current = true;
+              registerViolation('ears_not_visible', 'medium', `Ears not clearly visible for ${earMissingSecondsRef.current}s`);
             }
           } else {
-            faceMissingMajorRaisedRef.current = false;
+            earMissingSecondsRef.current = 0;
+            earViolationRaisedRef.current = false;
           }
 
           if ((nose?.score || 0) > MIN_CONFIDENCE) {
@@ -366,10 +374,10 @@ const TestEnvironment = () => {
             const centerY = nose.position.y / video.videoHeight;
 
             let direction = 'center';
-            if (centerX < 0.35) direction = 'left';
-            else if (centerX > 0.65) direction = 'right';
-            else if (centerY < 0.30) direction = 'up';
-            else if (centerY > 0.74) direction = 'down';
+            if (centerX < 0.26) direction = 'left';
+            else if (centerX > 0.74) direction = 'right';
+            else if (centerY < 0.18) direction = 'up';
+            else if (centerY > 0.84) direction = 'down';
 
             if (direction !== 'center') {
               setFaceTrackingState(`Face ${direction}`);
@@ -383,14 +391,14 @@ const TestEnvironment = () => {
 
               offFrameSecondsRef.current += 1;
 
-              if (offFrameSecondsRef.current >= 3 && !faceOffMinorRaisedRef.current) {
+              if (offFrameSecondsRef.current >= 5 && !faceOffMinorRaisedRef.current) {
                 faceOffMinorRaisedRef.current = true;
                 setFaceOutOfFrameEvents(prev => prev + 1);
                 setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
                 registerViolation(`face_${direction}`, 'medium', `Face moved ${direction} for ${offFrameSecondsRef.current}s`);
               }
 
-              if (offFrameSecondsRef.current >= 8 && !faceOffHighRaisedRef.current) {
+              if (offFrameSecondsRef.current >= 12 && !faceOffHighRaisedRef.current) {
                 faceOffHighRaisedRef.current = true;
                 setFaceOutOfFrameEvents(prev => prev + 1);
                 setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
