@@ -61,12 +61,29 @@ const TestEnvironment = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const VIOLATION_LIMIT = 3;
+  const BALANCED = {
+    centerXMin: 0.30,
+    centerXMax: 0.70,
+    centerYMin: 0.25,
+    centerYMax: 0.75,
+    directionPersistSec: 4,
+    faceCooldownMs: 8000,
+    graceMs: 10000,
+    noseConfidence: 0.55,
+    eyeConfidence: 0.50,
+    earConfidence: 0.45,
+    earMissingViolationSec: 10,
+  };
   const [violationCount, setViolationCount] = useState(0);
   const [faceDirectionCounts, setFaceDirectionCounts] = useState({ left: 0, right: 0, up: 0, down: 0 });
 
   const violationCountRef = useRef(0);
   const autoSubmittedForViolationRef = useRef(false);
   const offDirectionRef = useRef(null);
+  const testStartAtRef = useRef(0);
+  const lastViolationAtRef = useRef({});
+  const earMissingSecondsRef = useRef(0);
+  const eyesMissingSecondsRef = useRef(0);
 
   useEffect(() => {
     violationCountRef.current = violationCount;
@@ -155,7 +172,23 @@ const TestEnvironment = () => {
 
     ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(canvas.width * 0.26, canvas.height * 0.2, canvas.width * 0.48, canvas.height * 0.58);
+    ctx.strokeRect(
+      canvas.width * BALANCED.centerXMin,
+      canvas.height * BALANCED.centerYMin,
+      canvas.width * (BALANCED.centerXMax - BALANCED.centerXMin),
+      canvas.height * (BALANCED.centerYMax - BALANCED.centerYMin)
+    );
+  };
+
+  const registerFaceViolation = (eventType, severity, details) => {
+    if (!testStartAtRef.current) testStartAtRef.current = Date.now();
+    if (Date.now() - testStartAtRef.current < BALANCED.graceMs) return;
+
+    const lastAt = lastViolationAtRef.current[eventType] || 0;
+    if (Date.now() - lastAt < BALANCED.faceCooldownMs) return;
+
+    lastViolationAtRef.current[eventType] = Date.now();
+    registerViolation(eventType, severity, details);
   };
 
   const registerViolation = (eventType, severity, details) => {
@@ -244,6 +277,7 @@ const TestEnvironment = () => {
   // Re-attach camera stream when the test UI video element mounts.
   useEffect(() => {
     if (phase !== 'test' || !cameraActive) return;
+    if (!testStartAtRef.current) testStartAtRef.current = Date.now();
     if (videoRef.current && mediaStreamRef.current && videoRef.current.srcObject !== mediaStreamRef.current) {
       videoRef.current.srcObject = mediaStreamRef.current;
       videoRef.current.play().catch(() => {});
@@ -321,13 +355,13 @@ const TestEnvironment = () => {
             if (missingSecondsRef.current >= 3 && !faceMissingMinorRaisedRef.current) {
               faceMissingMinorRaisedRef.current = true;
               setFaceMissingEvents(prev => prev + 1);
-              registerViolation('face_missing', 'medium', `Face not visible for ${missingSecondsRef.current}s`);
+              registerFaceViolation('face_missing', 'medium', `Face not visible for ${missingSecondsRef.current}s`);
             }
 
             if (missingSecondsRef.current >= 10 && !faceMissingMajorRaisedRef.current) {
               faceMissingMajorRaisedRef.current = true;
               setLongFaceMissingEvents(prev => prev + 1);
-              registerViolation('face_missing_long', 'critical', `Face absent for ${missingSecondsRef.current}s`);
+              registerFaceViolation('face_missing_long', 'critical', `Face absent for ${missingSecondsRef.current}s`);
             }
             return;
           }
@@ -338,38 +372,41 @@ const TestEnvironment = () => {
           const leftEar = pose.keypoints.find(kp => kp.part === 'leftEar');
           const rightEar = pose.keypoints.find(kp => kp.part === 'rightEar');
 
-          const MIN_CONFIDENCE = 0.3;
-          const bothEyesVisible = (leftEye?.score || 0) > MIN_CONFIDENCE && (rightEye?.score || 0) > MIN_CONFIDENCE;
-          const bothEarsVisible = (leftEar?.score || 0) > MIN_CONFIDENCE && (rightEar?.score || 0) > MIN_CONFIDENCE;
+          const bothEyesVisible = (leftEye?.score || 0) > BALANCED.eyeConfidence && (rightEye?.score || 0) > BALANCED.eyeConfidence;
+          const bothEarsVisible = (leftEar?.score || 0) > BALANCED.earConfidence && (rightEar?.score || 0) > BALANCED.earConfidence;
 
           if (!bothEyesVisible) {
-            if (!faceMissingMinorRaisedRef.current) {
+            eyesMissingSecondsRef.current += 1;
+            if (eyesMissingSecondsRef.current >= 3 && !faceMissingMinorRaisedRef.current) {
               faceMissingMinorRaisedRef.current = true;
-              registerViolation('eyes_not_visible', 'medium', `Eyes are not both visible`);
+              registerFaceViolation('eyes_not_visible', 'medium', `Eyes are not both visible`);
             }
           } else {
+            eyesMissingSecondsRef.current = 0;
             faceMissingMinorRaisedRef.current = false;
           }
 
           if (!bothEarsVisible) {
-            if (!faceMissingMajorRaisedRef.current) {
+            earMissingSecondsRef.current += 1;
+            if (earMissingSecondsRef.current >= BALANCED.earMissingViolationSec && !faceMissingMajorRaisedRef.current) {
               faceMissingMajorRaisedRef.current = true;
-              registerViolation('ears_not_visible', 'medium', `Ears are not both visible`);
+              registerFaceViolation('ears_not_visible', 'medium', `Ears not visible for ${BALANCED.earMissingViolationSec}s`);
             }
           } else {
+            earMissingSecondsRef.current = 0;
             faceMissingMajorRaisedRef.current = false;
           }
 
-          if ((nose?.score || 0) > MIN_CONFIDENCE) {
+          if ((nose?.score || 0) > BALANCED.noseConfidence) {
             const video = videoRef.current;
             const centerX = nose.position.x / video.videoWidth;
             const centerY = nose.position.y / video.videoHeight;
 
             let direction = 'center';
-            if (centerX < 0.35) direction = 'left';
-            else if (centerX > 0.65) direction = 'right';
-            else if (centerY < 0.30) direction = 'up';
-            else if (centerY > 0.74) direction = 'down';
+            if (centerX < BALANCED.centerXMin) direction = 'left';
+            else if (centerX > BALANCED.centerXMax) direction = 'right';
+            else if (centerY < BALANCED.centerYMin) direction = 'up';
+            else if (centerY > BALANCED.centerYMax) direction = 'down';
 
             if (direction !== 'center') {
               setFaceTrackingState(`Face ${direction}`);
@@ -383,18 +420,18 @@ const TestEnvironment = () => {
 
               offFrameSecondsRef.current += 1;
 
-              if (offFrameSecondsRef.current >= 3 && !faceOffMinorRaisedRef.current) {
+              if (offFrameSecondsRef.current >= BALANCED.directionPersistSec && !faceOffMinorRaisedRef.current) {
                 faceOffMinorRaisedRef.current = true;
                 setFaceOutOfFrameEvents(prev => prev + 1);
                 setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
-                registerViolation(`face_${direction}`, 'medium', `Face moved ${direction} for ${offFrameSecondsRef.current}s`);
+                registerFaceViolation(`face_${direction}`, 'medium', `Face moved ${direction} for ${offFrameSecondsRef.current}s`);
               }
 
               if (offFrameSecondsRef.current >= 8 && !faceOffHighRaisedRef.current) {
                 faceOffHighRaisedRef.current = true;
                 setFaceOutOfFrameEvents(prev => prev + 1);
                 setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
-                registerViolation(`face_${direction}_long`, 'high', `Face remained ${direction} for too long (${offFrameSecondsRef.current}s)`);
+                registerFaceViolation(`face_${direction}_long`, 'high', `Face remained ${direction} for too long (${offFrameSecondsRef.current}s)`);
               }
               return;
             }
@@ -423,6 +460,10 @@ const TestEnvironment = () => {
         faceCheckIntervalRef.current = null;
       }
       latestPoseRef.current = null;
+      testStartAtRef.current = 0;
+      lastViolationAtRef.current = {};
+      earMissingSecondsRef.current = 0;
+      eyesMissingSecondsRef.current = 0;
       if (poseNetRef.current) {
         poseNetRef.current.dispose?.();
         poseNetRef.current = null;
