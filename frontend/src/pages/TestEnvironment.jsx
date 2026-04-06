@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Clock, AlertTriangle, Code, CheckCircle, Monitor, Play, ChevronLeft, ChevronRight, Flag, Send, BookOpen, Terminal, Loader } from 'lucide-react';
+import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 
 const TestEnvironment = () => {
   const apiBase = window.__API_BASE || 'http://localhost:8000';
@@ -33,17 +34,20 @@ const TestEnvironment = () => {
   const [proctoringEvents, setProctoringEvents] = useState([]);
 
   const faceDetectorRef = useRef(null);
-  const faceCheckIntervalRef = useRef(null);
-  const faceDetectBusyRef = useRef(false);
-  const missingSecondsRef = useRef(0);
-  const offFrameSecondsRef = useRef(0);
+  const animationFrameRef = useRef(null);
+  const lastDetectTimeRef = useRef(0);
+  const detectionRunningRef = useRef(false);
+  const latestDirectionRef = useRef('center');
+  const missingSinceRef = useRef(0);
+  const offFrameSinceRef = useRef(0);
+  const offDirectionSinceRef = useRef(0);
   const multiFaceActiveRef = useRef(false);
   const faceMissingMinorRaisedRef = useRef(false);
   const faceMissingMajorRaisedRef = useRef(false);
   const faceOffMinorRaisedRef = useRef(false);
   const faceOffHighRaisedRef = useRef(false);
-  const poseNetRef = useRef(null);
-  const latestPoseRef = useRef(null);
+  const violationCooldownRef = useRef({});
+  const directionHistoryRef = useRef([]);
 
   const [mcqAnswers, setMcqAnswers] = useState({});
   const [codingAnswers, setCodingAnswers] = useState({});
@@ -61,10 +65,50 @@ const TestEnvironment = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const VIOLATION_LIMIT = 3;
+  const VIOLATION_SCORE_LIMIT = 12;
+  const VIOLATION_COOLDOWN_MS = 5000;
+  const DETECTION_FPS = 12;
+  const DETECT_INTERVAL_MS = Math.floor(1000 / DETECTION_FPS);
+  const GUIDE_BOX = { x: 0.26, y: 0.20, width: 0.48, height: 0.58 };
+  const FACE_RULES = {
+    missingWarnMs: 3000,
+    missingMajorMs: 10000,
+    lookingAwayWarnMs: 3000,
+    lookingAwayMajorMs: 8000,
+    minFaceRatio: 0.03,
+    maxFaceRatio: 0.72,
+    framePaddingX: 0.08,
+    framePaddingY: 0.10,
+  };
+  const DIRECTION_THRESHOLDS = {
+    yawLeft: -0.22,
+    yawRight: 0.22,
+    pitchUp: -0.16,
+    pitchDown: 0.18,
+  };
+  const VIOLATION_WEIGHTS = {
+    tab_switch: 3,
+    fullscreen_exit: 3,
+    face_missing: 2,
+    face_missing_long: 4,
+    eyes_not_visible: 1,
+    ears_not_visible: 1,
+    face_left: 1,
+    face_right: 1,
+    face_up: 1,
+    face_down: 1,
+    face_left_long: 2,
+    face_right_long: 2,
+    face_up_long: 2,
+    face_down_long: 2,
+    multiple_faces: 5,
+  };
   const [violationCount, setViolationCount] = useState(0);
+  const [violationScore, setViolationScore] = useState(0);
   const [faceDirectionCounts, setFaceDirectionCounts] = useState({ left: 0, right: 0, up: 0, down: 0 });
 
   const violationCountRef = useRef(0);
+  const violationScoreRef = useRef(0);
   const autoSubmittedForViolationRef = useRef(false);
   const offDirectionRef = useRef(null);
 
@@ -72,9 +116,14 @@ const TestEnvironment = () => {
     violationCountRef.current = violationCount;
   }, [violationCount]);
 
+  useEffect(() => {
+    violationScoreRef.current = violationScore;
+  }, [violationScore]);
+
   const computeViolationStatus = () => {
     if (
       violationCount >= VIOLATION_LIMIT ||
+      violationScore >= VIOLATION_SCORE_LIMIT ||
       cameraDenied > 0 ||
       tabSwitches >= 5 ||
       fullscreenExits >= 3 ||
@@ -114,20 +163,128 @@ const TestEnvironment = () => {
     ]));
   };
 
-  const classifyFaceDirection = (faceBox, video) => {
-    if (!faceBox || !video || !video.videoWidth || !video.videoHeight) return 'unknown';
+  const getGuideRect = (video) => {
+    if (!video?.videoWidth || !video?.videoHeight) return null;
+    return {
+      x: video.videoWidth * GUIDE_BOX.x,
+      y: video.videoHeight * GUIDE_BOX.y,
+      width: video.videoWidth * GUIDE_BOX.width,
+      height: video.videoHeight * GUIDE_BOX.height,
+    };
+  };
 
-    const centerX = (faceBox.x + (faceBox.width / 2)) / video.videoWidth;
-    const centerY = (faceBox.y + (faceBox.height / 2)) / video.videoHeight;
+  const getFaceBoxFromLandmarks = (landmarks, video) => {
+    if (!Array.isArray(landmarks) || !landmarks.length || !video?.videoWidth || !video?.videoHeight) return null;
 
-    if (centerX < 0.35) return 'left';
-    if (centerX > 0.65) return 'right';
-    if (centerY < 0.30) return 'up';
-    if (centerY > 0.74) return 'down';
+    let minX = 1;
+    let minY = 1;
+    let maxX = 0;
+    let maxY = 0;
+
+    landmarks.forEach((lm) => {
+      if (typeof lm.x !== 'number' || typeof lm.y !== 'number') return;
+      minX = Math.min(minX, lm.x);
+      minY = Math.min(minY, lm.y);
+      maxX = Math.max(maxX, lm.x);
+      maxY = Math.max(maxY, lm.y);
+    });
+
+    const width = Math.max((maxX - minX) * video.videoWidth, 1);
+    const height = Math.max((maxY - minY) * video.videoHeight, 1);
+    const centerX = ((minX + maxX) / 2) * video.videoWidth;
+    const centerY = ((minY + maxY) / 2) * video.videoHeight;
+
+    return {
+      x: centerX - width / 2,
+      y: centerY - height / 2,
+      width,
+      height,
+      centerX,
+      centerY,
+    };
+  };
+
+  const isFaceInsideGuide = (faceBox, guideRect, video) => {
+    if (!faceBox || !guideRect || !video?.videoWidth || !video?.videoHeight) return false;
+
+    const areaRatio = (faceBox.width * faceBox.height) / (video.videoWidth * video.videoHeight);
+    if (areaRatio < FACE_RULES.minFaceRatio || areaRatio > FACE_RULES.maxFaceRatio) return false;
+
+    const padX = guideRect.width * FACE_RULES.framePaddingX;
+    const padY = guideRect.height * FACE_RULES.framePaddingY;
+    return (
+      faceBox.x >= guideRect.x + padX &&
+      faceBox.y >= guideRect.y + padY &&
+      faceBox.x + faceBox.width <= guideRect.x + guideRect.width - padX &&
+      faceBox.y + faceBox.height <= guideRect.y + guideRect.height - padY
+    );
+  };
+
+  const getFaceDirectionFromLandmarks = (landmarks) => {
+    if (!Array.isArray(landmarks) || landmarks.length < 400) return 'unknown';
+
+    const leftOuter = landmarks[33];
+    const leftInner = landmarks[133];
+    const rightInner = landmarks[362];
+    const rightOuter = landmarks[263];
+    const noseTip = landmarks[1];
+    const mouthTop = landmarks[13];
+
+    if (!leftOuter || !leftInner || !rightInner || !rightOuter || !noseTip || !mouthTop) return 'unknown';
+
+    const leftEyeX = (leftOuter.x + leftInner.x) / 2;
+    const rightEyeX = (rightOuter.x + rightInner.x) / 2;
+    const eyeCenterX = (leftEyeX + rightEyeX) / 2;
+    const eyeCenterY = (leftOuter.y + leftInner.y + rightInner.y + rightOuter.y) / 4;
+    const eyeDistance = Math.max(Math.abs(rightEyeX - leftEyeX), 0.01);
+
+    const yaw = (noseTip.x - eyeCenterX) / eyeDistance;
+    const pitch = (noseTip.y - eyeCenterY) / eyeDistance;
+    const mouthPitch = (mouthTop.y - eyeCenterY) / eyeDistance;
+
+    if (yaw <= DIRECTION_THRESHOLDS.yawLeft) return 'left';
+    if (yaw >= DIRECTION_THRESHOLDS.yawRight) return 'right';
+    if (pitch <= DIRECTION_THRESHOLDS.pitchUp) return 'up';
+    if (pitch >= DIRECTION_THRESHOLDS.pitchDown || mouthPitch >= 1.4) return 'down';
     return 'center';
   };
 
-  const drawPoseOnCanvas = (pose) => {
+  const classifyFaceDirection = (faceBox, video) => {
+    if (!faceBox || !video?.videoWidth || !video?.videoHeight) return 'center';
+    const x = faceBox.centerX / video.videoWidth;
+    const y = faceBox.centerY / video.videoHeight;
+    if (x < GUIDE_BOX.x) return 'left';
+    if (x > GUIDE_BOX.x + GUIDE_BOX.width) return 'right';
+    if (y < GUIDE_BOX.y) return 'up';
+    if (y > GUIDE_BOX.y + GUIDE_BOX.height) return 'down';
+    return 'center';
+  };
+
+  const getStableDirection = (rawDirection) => {
+    const history = directionHistoryRef.current;
+    history.push(rawDirection);
+    if (history.length > 6) history.shift();
+
+    const scores = history.reduce((acc, dir) => {
+      acc[dir] = (acc[dir] || 0) + 1;
+      return acc;
+    }, {});
+
+    let best = 'center';
+    let bestCount = 0;
+    Object.entries(scores).forEach(([dir, count]) => {
+      if (count > bestCount) {
+        best = dir;
+        bestCount = count;
+      }
+    });
+
+    if (bestCount < 3) return latestDirectionRef.current || 'center';
+    latestDirectionRef.current = best;
+    return best;
+  };
+
+  const drawOverlay = ({ faceBox, guideRect, statusText, statusColor }) => {
     if (!canvasRef.current || !videoRef.current) return;
 
     const canvas = canvasRef.current;
@@ -139,28 +296,52 @@ const TestEnvironment = () => {
     if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!pose?.keypoints?.length) return;
 
-    const colors = { nose: '#ef4444', leftEye: '#10b981', rightEye: '#10b981', leftEar: '#3b82f6', rightEar: '#3b82f6' };
-    for (const kp of pose.keypoints) {
-      if ((kp?.score || 0) < 0.3) continue;
-      const x = kp?.position?.x;
-      const y = kp?.position?.y;
-      if (typeof x !== 'number' || typeof y !== 'number') continue;
-      ctx.beginPath();
-      ctx.fillStyle = colors[kp.part] || '#f59e0b';
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (guideRect) {
+      ctx.clearRect(guideRect.x, guideRect.y, guideRect.width, guideRect.height);
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.95)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(guideRect.x, guideRect.y, guideRect.width, guideRect.height);
     }
 
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(canvas.width * 0.26, canvas.height * 0.2, canvas.width * 0.48, canvas.height * 0.58);
+    if (faceBox) {
+      ctx.strokeStyle = statusColor || '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(faceBox.x, faceBox.y, faceBox.width, faceBox.height);
+    }
+
+    if (statusText) {
+      ctx.fillStyle = 'rgba(8, 15, 32, 0.84)';
+      ctx.fillRect(16, 16, 220, 30);
+      ctx.fillStyle = statusColor || '#f8fafc';
+      ctx.font = '600 12px sans-serif';
+      ctx.fillText(statusText, 26, 36);
+    }
   };
 
   const registerViolation = (eventType, severity, details) => {
+    const now = Date.now();
+    const lastAt = violationCooldownRef.current[eventType] || 0;
+    if (now - lastAt < VIOLATION_COOLDOWN_MS) return;
+    violationCooldownRef.current[eventType] = now;
+
     setWarnings(prev => [...prev.slice(-9), `⚠️ ${details}`]);
     recordProctorEvent(eventType, severity, details);
+
+    const weight = VIOLATION_WEIGHTS[eventType] || 1;
+    setViolationScore(prev => {
+      const next = prev + weight;
+      if (next >= VIOLATION_SCORE_LIMIT && !autoSubmittedForViolationRef.current) {
+        autoSubmittedForViolationRef.current = true;
+        setTimeout(() => {
+          handleAutoSubmit('violation_limit');
+        }, 0);
+      }
+      return next;
+    });
 
     setViolationCount(prev => {
       const next = prev + 1;
@@ -250,191 +431,193 @@ const TestEnvironment = () => {
     }
   }, [phase, cameraActive]);
 
-  const isFaceCentered = (faceBox, video) => {
-    if (!faceBox || !video || !video.videoWidth || !video.videoHeight) return false;
-
-    const centerX = (faceBox.x + (faceBox.width / 2)) / video.videoWidth;
-    const centerY = (faceBox.y + (faceBox.height / 2)) / video.videoHeight;
-    const areaRatio = (faceBox.width * faceBox.height) / (video.videoWidth * video.videoHeight);
-
-    const horizontalInRange = centerX >= 0.2 && centerX <= 0.8;
-    const verticalInRange = centerY >= 0.2 && centerY <= 0.82;
-    const sizeInRange = areaRatio >= 0.02 && areaRatio <= 0.65;
-
-    return horizontalInRange && verticalInRange && sizeInRange;
-  };
-
   useEffect(() => {
     if (phase !== 'test' || !cameraActive) return;
-
-    if (!window.ml5 || !videoRef.current) {
-      setFaceTrackingSupported(false);
-      setFaceTrackingState('Unsupported');
-      return;
-    }
 
     setFaceTrackingSupported(true);
     setFaceTrackingState('Initializing...');
 
-    const initPoseNet = async () => {
-      try {
-        poseNetRef.current = await window.ml5.poseNet(videoRef.current, { maxPoseDetections: 2 });
-        if (typeof poseNetRef.current.on === 'function') {
-          poseNetRef.current.on('pose', (results) => {
-            const first = Array.isArray(results) ? results[0] : null;
-            latestPoseRef.current = first?.pose || null;
-          });
-        }
-        setFaceTrackingState('Monitoring');
-      } catch (err) {
-        console.error('PoseNet init failed:', err);
-        setFaceTrackingSupported(false);
-        setFaceTrackingState('Tracking unavailable');
+    let cancelled = false;
+
+    const runLoop = async () => {
+      if (cancelled || !videoRef.current || !faceDetectorRef.current) return;
+
+      const now = performance.now();
+      if (now - lastDetectTimeRef.current < DETECT_INTERVAL_MS) {
+        animationFrameRef.current = requestAnimationFrame(runLoop);
+        return;
+      }
+      lastDetectTimeRef.current = now;
+
+      const video = videoRef.current;
+      if (video.readyState < 2) {
+        animationFrameRef.current = requestAnimationFrame(runLoop);
         return;
       }
 
-      faceCheckIntervalRef.current = setInterval(async () => {
-        if (faceDetectBusyRef.current || !poseNetRef.current || !videoRef.current) return;
-        if (videoRef.current.readyState < 2) return;
+      let result = null;
+      try {
+        result = faceDetectorRef.current.detectForVideo(video, now);
+      } catch (err) {
+        console.error('Face detection error:', err);
+        setFaceTrackingState('Tracking paused');
+        animationFrameRef.current = requestAnimationFrame(runLoop);
+        return;
+      }
 
-        faceDetectBusyRef.current = true;
-        try {
-          let pose = latestPoseRef.current;
-          if (!pose && typeof poseNetRef.current.singlePose === 'function') {
-            const single = await poseNetRef.current.singlePose(videoRef.current);
-            pose = Array.isArray(single) ? single[0] : single;
-          } else if (!pose && typeof poseNetRef.current.estimateSinglePose === 'function') {
-            const estimated = await poseNetRef.current.estimateSinglePose(videoRef.current, { flipHorizontal: true });
-            pose = estimated?.pose || estimated;
-          }
+      const faces = result?.faceLandmarks || [];
+      const guideRect = getGuideRect(video);
+      const hasFace = faces.length > 0;
 
-          drawPoseOnCanvas(pose);
-
-          if (!pose || !pose.keypoints || pose.keypoints.length === 0) {
-            setFaceTrackingState('Face not detected');
-            missingSecondsRef.current += 1;
-            offFrameSecondsRef.current = 0;
-            faceOffMinorRaisedRef.current = false;
-            faceOffHighRaisedRef.current = false;
-            multiFaceActiveRef.current = false;
-
-            if (missingSecondsRef.current >= 3 && !faceMissingMinorRaisedRef.current) {
-              faceMissingMinorRaisedRef.current = true;
-              setFaceMissingEvents(prev => prev + 1);
-              registerViolation('face_missing', 'medium', `Face not visible for ${missingSecondsRef.current}s`);
-            }
-
-            if (missingSecondsRef.current >= 10 && !faceMissingMajorRaisedRef.current) {
-              faceMissingMajorRaisedRef.current = true;
-              setLongFaceMissingEvents(prev => prev + 1);
-              registerViolation('face_missing_long', 'critical', `Face absent for ${missingSecondsRef.current}s`);
-            }
-            return;
-          }
-
-          const nose = pose.keypoints.find(kp => kp.part === 'nose');
-          const leftEye = pose.keypoints.find(kp => kp.part === 'leftEye');
-          const rightEye = pose.keypoints.find(kp => kp.part === 'rightEye');
-          const leftEar = pose.keypoints.find(kp => kp.part === 'leftEar');
-          const rightEar = pose.keypoints.find(kp => kp.part === 'rightEar');
-
-          const MIN_CONFIDENCE = 0.3;
-          const bothEyesVisible = (leftEye?.score || 0) > MIN_CONFIDENCE && (rightEye?.score || 0) > MIN_CONFIDENCE;
-          const bothEarsVisible = (leftEar?.score || 0) > MIN_CONFIDENCE && (rightEar?.score || 0) > MIN_CONFIDENCE;
-
-          if (!bothEyesVisible) {
-            if (!faceMissingMinorRaisedRef.current) {
-              faceMissingMinorRaisedRef.current = true;
-              registerViolation('eyes_not_visible', 'medium', `Eyes are not both visible`);
-            }
-          } else {
-            faceMissingMinorRaisedRef.current = false;
-          }
-
-          if (!bothEarsVisible) {
-            if (!faceMissingMajorRaisedRef.current) {
-              faceMissingMajorRaisedRef.current = true;
-              registerViolation('ears_not_visible', 'medium', `Ears are not both visible`);
-            }
-          } else {
-            faceMissingMajorRaisedRef.current = false;
-          }
-
-          if ((nose?.score || 0) > MIN_CONFIDENCE) {
-            const video = videoRef.current;
-            const centerX = nose.position.x / video.videoWidth;
-            const centerY = nose.position.y / video.videoHeight;
-
-            let direction = 'center';
-            if (centerX < 0.35) direction = 'left';
-            else if (centerX > 0.65) direction = 'right';
-            else if (centerY < 0.30) direction = 'up';
-            else if (centerY > 0.74) direction = 'down';
-
-            if (direction !== 'center') {
-              setFaceTrackingState(`Face ${direction}`);
-
-              if (offDirectionRef.current !== direction) {
-                offDirectionRef.current = direction;
-                offFrameSecondsRef.current = 0;
-                faceOffMinorRaisedRef.current = false;
-                faceOffHighRaisedRef.current = false;
-              }
-
-              offFrameSecondsRef.current += 1;
-
-              if (offFrameSecondsRef.current >= 3 && !faceOffMinorRaisedRef.current) {
-                faceOffMinorRaisedRef.current = true;
-                setFaceOutOfFrameEvents(prev => prev + 1);
-                setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
-                registerViolation(`face_${direction}`, 'medium', `Face moved ${direction} for ${offFrameSecondsRef.current}s`);
-              }
-
-              if (offFrameSecondsRef.current >= 8 && !faceOffHighRaisedRef.current) {
-                faceOffHighRaisedRef.current = true;
-                setFaceOutOfFrameEvents(prev => prev + 1);
-                setFaceDirectionCounts(prev => ({ ...prev, [direction]: (prev[direction] || 0) + 1 }));
-                registerViolation(`face_${direction}_long`, 'high', `Face remained ${direction} for too long (${offFrameSecondsRef.current}s)`);
-              }
-              return;
-            }
-
-            setFaceTrackingState('Face aligned');
-            offDirectionRef.current = null;
-            offFrameSecondsRef.current = 0;
-            faceOffMinorRaisedRef.current = false;
-            faceOffHighRaisedRef.current = false;
-            missingSecondsRef.current = 0;
-          }
-        } catch (err) {
-          console.error('Face tracking error:', err);
-          setFaceTrackingState('Tracking paused');
-        } finally {
-          faceDetectBusyRef.current = false;
+      if (faces.length > 1) {
+        if (!multiFaceActiveRef.current) {
+          multiFaceActiveRef.current = true;
+          setMultiFaceEvents(prev => prev + 1);
+          registerViolation('multiple_faces', 'critical', `Multiple faces detected (${faces.length})`);
         }
-      }, 1000);
+      } else {
+        multiFaceActiveRef.current = false;
+      }
+
+      if (!hasFace) {
+        if (!missingSinceRef.current) missingSinceRef.current = Date.now();
+        const missingMs = Date.now() - missingSinceRef.current;
+
+        setFaceTrackingState('Face missing');
+        drawOverlay({ guideRect, statusText: 'Status: Missing', statusColor: '#ef4444' });
+
+        offFrameSinceRef.current = 0;
+        offDirectionSinceRef.current = 0;
+        offDirectionRef.current = null;
+        faceOffMinorRaisedRef.current = false;
+        faceOffHighRaisedRef.current = false;
+
+        if (missingMs >= FACE_RULES.missingWarnMs && !faceMissingMinorRaisedRef.current) {
+          faceMissingMinorRaisedRef.current = true;
+          setFaceMissingEvents(prev => prev + 1);
+          registerViolation('face_missing', 'medium', `Face not visible for ${Math.round(missingMs / 1000)}s`);
+        }
+
+        if (missingMs >= FACE_RULES.missingMajorMs && !faceMissingMajorRaisedRef.current) {
+          faceMissingMajorRaisedRef.current = true;
+          setLongFaceMissingEvents(prev => prev + 1);
+          registerViolation('face_missing_long', 'critical', `Face absent for ${Math.round(missingMs / 1000)}s`);
+        }
+
+        animationFrameRef.current = requestAnimationFrame(runLoop);
+        return;
+      }
+
+      missingSinceRef.current = 0;
+      faceMissingMinorRaisedRef.current = false;
+      faceMissingMajorRaisedRef.current = false;
+
+      const primaryLandmarks = faces[0];
+      const faceBox = getFaceBoxFromLandmarks(primaryLandmarks, video);
+      const insideGuide = isFaceInsideGuide(faceBox, guideRect, video);
+      const rawDirection = getFaceDirectionFromLandmarks(primaryLandmarks);
+      const direction = getStableDirection(rawDirection);
+
+      const leftEye = primaryLandmarks?.[33];
+      const rightEye = primaryLandmarks?.[263];
+      const leftEar = primaryLandmarks?.[234];
+      const rightEar = primaryLandmarks?.[454];
+      const eyesVisible = !!(leftEye && rightEye);
+      const earsVisible = !!(leftEar && rightEar);
+
+      if (!eyesVisible) registerViolation('eyes_not_visible', 'medium', 'Eyes are not both visible');
+      if (!earsVisible) registerViolation('ears_not_visible', 'medium', 'Ears are not both visible');
+
+      if (!insideGuide || (direction !== 'center' && direction !== 'unknown')) {
+        const movementDirection = direction === 'unknown'
+          ? classifyFaceDirection(faceBox, video)
+          : direction;
+
+        if (!offFrameSinceRef.current) offFrameSinceRef.current = Date.now();
+        if (offDirectionRef.current !== movementDirection) {
+          offDirectionRef.current = movementDirection;
+          offDirectionSinceRef.current = Date.now();
+          faceOffMinorRaisedRef.current = false;
+          faceOffHighRaisedRef.current = false;
+        }
+
+        const awayMs = Date.now() - offDirectionSinceRef.current;
+        setFaceTrackingState(`Face ${movementDirection}`);
+        drawOverlay({
+          faceBox,
+          guideRect,
+          statusText: `Status: ${movementDirection.toUpperCase()}`,
+          statusColor: '#f59e0b',
+        });
+
+        if (awayMs >= FACE_RULES.lookingAwayWarnMs && !faceOffMinorRaisedRef.current) {
+          faceOffMinorRaisedRef.current = true;
+          setFaceOutOfFrameEvents(prev => prev + 1);
+          setFaceDirectionCounts(prev => ({ ...prev, [movementDirection]: (prev[movementDirection] || 0) + 1 }));
+          registerViolation(`face_${movementDirection}`, 'medium', `Face moved ${movementDirection} for ${Math.round(awayMs / 1000)}s`);
+        }
+
+        if (awayMs >= FACE_RULES.lookingAwayMajorMs && !faceOffHighRaisedRef.current) {
+          faceOffHighRaisedRef.current = true;
+          registerViolation(`face_${movementDirection}_long`, 'high', `Face remained ${movementDirection} for too long (${Math.round(awayMs / 1000)}s)`);
+        }
+      } else {
+        offFrameSinceRef.current = 0;
+        offDirectionSinceRef.current = 0;
+        offDirectionRef.current = null;
+        faceOffMinorRaisedRef.current = false;
+        faceOffHighRaisedRef.current = false;
+        setFaceTrackingState('Face aligned');
+        drawOverlay({ faceBox, guideRect, statusText: 'Status: Aligned', statusColor: '#10b981' });
+      }
+
+      animationFrameRef.current = requestAnimationFrame(runLoop);
     };
 
-    initPoseNet();
+    const initDetector = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+        faceDetectorRef.current = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task',
+            delegate: 'GPU',
+          },
+          runningMode: 'VIDEO',
+          numFaces: 3,
+        });
+        setFaceTrackingState('Monitoring');
+        detectionRunningRef.current = true;
+        animationFrameRef.current = requestAnimationFrame(runLoop);
+      } catch (err) {
+        console.error('FaceLandmarker init failed:', err);
+        setFaceTrackingSupported(false);
+        setFaceTrackingState('Tracking unavailable');
+      }
+    };
+
+    initDetector();
 
     return () => {
-      if (faceCheckIntervalRef.current) {
-        clearInterval(faceCheckIntervalRef.current);
-        faceCheckIntervalRef.current = null;
+      cancelled = true;
+      detectionRunningRef.current = false;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
-      latestPoseRef.current = null;
-      if (poseNetRef.current) {
-        poseNetRef.current.dispose?.();
-        poseNetRef.current = null;
-      }
+      faceDetectorRef.current = null;
+      directionHistoryRef.current = [];
+      latestDirectionRef.current = 'center';
+      missingSinceRef.current = 0;
+      offFrameSinceRef.current = 0;
+      offDirectionSinceRef.current = 0;
     };
   }, [phase, cameraActive]);
 
   useEffect(() => {
     return () => {
-      if (faceCheckIntervalRef.current) {
-        clearInterval(faceCheckIntervalRef.current);
-        faceCheckIntervalRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -621,6 +804,7 @@ const TestEnvironment = () => {
             multi_face_events: multiFaceEvents,
             long_face_missing_events: longFaceMissingEvents,
             violation_count: violationCount,
+            violation_score: violationScore,
             violation_limit: VIOLATION_LIMIT,
             face_direction_counts: faceDirectionCounts,
             face_tracking_supported: faceTrackingSupported,
@@ -642,9 +826,9 @@ const TestEnvironment = () => {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
         mediaStreamRef.current = null;
       }
-      if (faceCheckIntervalRef.current) {
-        clearInterval(faceCheckIntervalRef.current);
-        faceCheckIntervalRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
       clearInterval(timerRef.current);
     }
@@ -808,7 +992,13 @@ const TestEnvironment = () => {
   const codingQs = testData?.coding || [];
   const totalAnswered = Object.keys(mcqAnswers).length + Object.keys(codingAnswers).filter(k => codingAnswers[k]?.trim()).length;
   const totalQuestions = mcqs.length + codingQs.length;
-  const violationVisualLevel = violationCount >= VIOLATION_LIMIT ? 'danger' : violationCount >= 2 ? 'warn' : violationCount > 0 ? 'mild' : 'none';
+  const violationVisualLevel = (violationCount >= VIOLATION_LIMIT || violationScore >= VIOLATION_SCORE_LIMIT)
+    ? 'danger'
+    : (violationCount >= 2 || violationScore >= 4)
+      ? 'warn'
+      : (violationCount > 0 || violationScore > 0)
+        ? 'mild'
+        : 'none';
 
   return (
     <div className={`test-environment-container violation-${violationVisualLevel}`} style={{ display: 'flex', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', position: 'relative' }}>
@@ -882,7 +1072,7 @@ const TestEnvironment = () => {
           </div>
 
           <div className={`test-violation-banner ${violationCount >= VIOLATION_LIMIT ? 'danger' : violationCount > 0 ? 'warn' : 'safe'}`}>
-            Violations: {violationCount}/{VIOLATION_LIMIT}
+            Violations: {violationCount}/{VIOLATION_LIMIT} | Score: {violationScore}/{VIOLATION_SCORE_LIMIT}
           </div>
         </div>
 
