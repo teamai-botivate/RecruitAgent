@@ -36,5 +36,7 @@ node_modules/
 frontend/node_modules/
 frontend/dist/
 
-# Backend isolated as separate repo
-backend/
+# Backend runtime artifacts (keep backend source tracked)
+backend/chroma_db/
+backend/Reports/
+backend/temp/
