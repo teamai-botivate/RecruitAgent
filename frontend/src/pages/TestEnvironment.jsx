@@ -63,18 +63,19 @@ const TestEnvironment = () => {
   const [submitting, setSubmitting] = useState(false);
   const [starting, setStarting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [violationGate, setViolationGate] = useState({ open: false, severity: 'medium', message: '' });
 
   const VIOLATION_LIMIT = 3;
   const VIOLATION_SCORE_LIMIT = 12;
   const VIOLATION_COOLDOWN_MS = 5000;
-  const DETECTION_FPS = 12;
+  const DETECTION_FPS = 8;
   const DETECT_INTERVAL_MS = Math.floor(1000 / DETECTION_FPS);
   const GUIDE_BOX = { x: 0.26, y: 0.20, width: 0.48, height: 0.58 };
   const FACE_RULES = {
     missingWarnMs: 3000,
     missingMajorMs: 10000,
-    lookingAwayWarnMs: 3000,
-    lookingAwayMajorMs: 8000,
+    lookingAwayWarnMs: 4500,
+    lookingAwayMajorMs: 10000,
     minFaceRatio: 0.03,
     maxFaceRatio: 0.72,
     framePaddingX: 0.08,
@@ -109,7 +110,7 @@ const TestEnvironment = () => {
 
   const violationCountRef = useRef(0);
   const violationScoreRef = useRef(0);
-  const autoSubmittedForViolationRef = useRef(false);
+  const violationGateOpenRef = useRef(false);
   const offDirectionRef = useRef(null);
 
   useEffect(() => {
@@ -119,6 +120,10 @@ const TestEnvironment = () => {
   useEffect(() => {
     violationScoreRef.current = violationScore;
   }, [violationScore]);
+
+  useEffect(() => {
+    violationGateOpenRef.current = violationGate.open;
+  }, [violationGate.open]);
 
   const computeViolationStatus = () => {
     if (
@@ -332,27 +337,34 @@ const TestEnvironment = () => {
     recordProctorEvent(eventType, severity, details);
 
     const weight = VIOLATION_WEIGHTS[eventType] || 1;
-    setViolationScore(prev => {
-      const next = prev + weight;
-      if (next >= VIOLATION_SCORE_LIMIT && !autoSubmittedForViolationRef.current) {
-        autoSubmittedForViolationRef.current = true;
-        setTimeout(() => {
-          handleAutoSubmit('violation_limit');
-        }, 0);
-      }
-      return next;
-    });
+    setViolationScore(prev => prev + weight);
 
     setViolationCount(prev => {
       const next = prev + 1;
-      if (next >= VIOLATION_LIMIT && !autoSubmittedForViolationRef.current) {
-        autoSubmittedForViolationRef.current = true;
-        setTimeout(() => {
-          handleAutoSubmit('violation_limit');
-        }, 0);
-      }
+      const nextScore = violationScoreRef.current + weight;
+      const limitHint = next >= VIOLATION_LIMIT || nextScore >= VIOLATION_SCORE_LIMIT
+        ? 'Violation limit reached. Test will continue and HR will review final decision.'
+        : 'Please stay compliant and continue the test.';
+      setViolationGate({
+        open: true,
+        severity,
+        message: `${details}\nViolations: ${next}/${VIOLATION_LIMIT} | Score: ${nextScore}/${VIOLATION_SCORE_LIMIT}\n${limitHint}`,
+      });
       return next;
     });
+  };
+
+  const acknowledgeViolationGate = () => {
+    setViolationGate({ open: false, severity: 'medium', message: '' });
+    missingSinceRef.current = 0;
+    offFrameSinceRef.current = 0;
+    offDirectionSinceRef.current = 0;
+    offDirectionRef.current = null;
+    faceOffMinorRaisedRef.current = false;
+    faceOffHighRaisedRef.current = false;
+    directionHistoryRef.current = [];
+    latestDirectionRef.current = 'center';
+    setFaceTrackingState('Monitoring');
   };
 
   // Mobile check
@@ -397,7 +409,6 @@ const TestEnvironment = () => {
           registerViolation('fullscreen_exit', 'high', `Exited fullscreen (warning #${n}) at ${new Date().toLocaleTimeString()}`);
           return n;
         });
-        alert('⚠️ You exited fullscreen. This is recorded as a proctoring violation. Please return to fullscreen immediately.');
       }
     };
 
@@ -451,6 +462,13 @@ const TestEnvironment = () => {
 
       const video = videoRef.current;
       if (video.readyState < 2) {
+        animationFrameRef.current = requestAnimationFrame(runLoop);
+        return;
+      }
+
+      if (violationGateOpenRef.current) {
+        const guideRect = getGuideRect(video);
+        drawOverlay({ guideRect, statusText: 'Status: Paused for warning', statusColor: '#f59e0b' });
         animationFrameRef.current = requestAnimationFrame(runLoop);
         return;
       }
@@ -835,11 +853,8 @@ const TestEnvironment = () => {
   };
 
   const handleAutoSubmit = (reason = 'time_up') => {
-    if (reason === 'violation_limit') {
-      alert(`❌ Maximum violations reached (${VIOLATION_LIMIT}/${VIOLATION_LIMIT}). Auto-submitting your test.`);
-    } else {
-      alert('⏰ Time is up! Auto-submitting.');
-    }
+    if (reason !== 'time_up') return;
+    alert('⏰ Time is up! Auto-submitting.');
     submitTest();
   };
   const handleManualSubmit = () => { if (window.confirm('Submit your test? You cannot change answers after.')) submitTest(); };
@@ -1004,6 +1019,58 @@ const TestEnvironment = () => {
     <div className={`test-environment-container violation-${violationVisualLevel}`} style={{ display: 'flex', minHeight: '100vh', background: '#0a0d14', color: '#f8fafc', position: 'relative' }}>
 
       {violationVisualLevel !== 'none' && <div className={`test-violation-overlay ${violationVisualLevel}`} />}
+      {violationGate.open && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(2, 6, 23, 0.96)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '640px',
+            borderRadius: '14px',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            background: '#0f172a',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
+            padding: '24px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <AlertTriangle size={20} color="#f59e0b" />
+              <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#f8fafc' }}>Proctoring Warning</h3>
+            </div>
+            <p style={{
+              margin: 0,
+              whiteSpace: 'pre-line',
+              lineHeight: 1.65,
+              color: '#cbd5e1',
+              fontSize: '0.95rem',
+            }}>
+              {violationGate.message}
+            </p>
+            <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={acknowledgeViolationGate}
+                style={{
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '11px 16px',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #10b981, #14b8a6)',
+                  color: '#052e2b',
+                }}
+              >
+                OK, I Understand
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Mobile overlay */}
       {sidebarOpen && isMobile && (
