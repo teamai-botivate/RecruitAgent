@@ -86,13 +86,13 @@ const TestEnvironment = () => {
         missingMajorMs: 15000,
         lookingAwayWarnMs: 3000,      // Direction minor threshold (left/right/up/down)
         lookingAwayMajorMs: 14000,    // Direction major threshold
-        centerDeadzoneX: 0.42,        // Larger deadzone - mobile faces are bigger and move more
-        centerDeadzoneY: 0.42,
+        centerDeadzoneX: 0.30,        // Flexible center zone for natural head movement
+        centerDeadzoneY: 0.30,
         directionPersistMs: 3000,     // Raise direction violation after 3s sustained movement
-        minFaceRatio: 0.04,           // Allow slightly smaller faces (worse lighting)
-        maxFaceRatio: 0.85,           // Allow much larger faces on mobile (closer to camera)
-        framePaddingX: 0.14,          // More forgiveness at frame edges
-        framePaddingY: 0.16,
+        minFaceRatio: 0.03,
+        maxFaceRatio: 0.90,           // Mobile face often appears larger
+        framePaddingX: 0.08,
+        framePaddingY: 0.10,
       };
     }
     
@@ -102,13 +102,13 @@ const TestEnvironment = () => {
       missingMajorMs: 15000,
       lookingAwayWarnMs: 3000,       // Direction minor threshold (left/right/up/down)
       lookingAwayMajorMs: 14000,
-      centerDeadzoneX: 0.38,         // More tolerance for small movement
-      centerDeadzoneY: 0.38,
+      centerDeadzoneX: 0.28,         // Flexible center zone for natural movement
+      centerDeadzoneY: 0.28,
       directionPersistMs: 3000,      // Raise direction violation after 3s sustained movement
       minFaceRatio: 0.03,
-      maxFaceRatio: 0.72,
-      framePaddingX: 0.10,
-      framePaddingY: 0.12,
+      maxFaceRatio: 0.82,
+      framePaddingX: 0.06,
+      framePaddingY: 0.08,
     };
   };
 
@@ -117,7 +117,7 @@ const TestEnvironment = () => {
     yawLeft: -0.28,
     yawRight: 0.28,
     pitchUp: -0.22,
-    pitchDown: 0.24,
+    pitchDown: 0.30,
   };
   const VIOLATION_WEIGHTS = {
     tab_switch: 3,
@@ -627,9 +627,15 @@ const TestEnvironment = () => {
 
       let movementDirection = direction === 'unknown' ? boxDirection : direction;
 
-      // Facial expressions can change pitch landmarks; require position confirmation for vertical movement.
-      if ((movementDirection === 'up' || movementDirection === 'down') && boxDirection === 'center' && insideGuide) {
-        movementDirection = 'center';
+      // For vertical movement, require both landmark direction and face-box position to agree.
+      // This avoids false face_down from expressions or tiny posture shifts.
+      if ((movementDirection === 'up' || movementDirection === 'down') && insideGuide) {
+        const landmarkVertical = direction === 'up' || direction === 'down';
+        const boxVertical = boxDirection === 'up' || boxDirection === 'down';
+        const confirmedVertical = landmarkVertical && boxVertical && direction === boxDirection;
+        if (!confirmedVertical) {
+          movementDirection = 'center';
+        }
       }
 
       // Ignore initial transient head motions immediately after test starts.
