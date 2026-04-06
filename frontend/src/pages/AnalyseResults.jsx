@@ -22,6 +22,7 @@ const AnalyseResults = ({ navigateTo }) => {
   const [violationDetailsCandidate, setViolationDetailsCandidate] = useState(null);
   const [violationEventsMap, setViolationEventsMap] = useState({});
   const [loadingViolations, setLoadingViolations] = useState({});
+  const [violationSeverityMap, setViolationSeverityMap] = useState({});
 
   const getStatusLabel = (statusValue) => {
     const raw = String(statusValue || '').trim();
@@ -29,21 +30,24 @@ const AnalyseResults = ({ navigateTo }) => {
     return raw.split('|')[0].trim();
   };
 
-  const fetchViolationEvents = async (jdId, email) => {
+  const fetchViolationEvents = async (jdId, email, forceRefresh = false) => {
     const emailKey = String(email || '').trim().toLowerCase();
     if (!emailKey) return;
-    if (violationEventsMap[emailKey]) return;
+    if (violationEventsMap[emailKey] && !forceRefresh) return;
 
     setLoadingViolations(prev => ({ ...prev, [emailKey]: true }));
     try {
       const safeJdId = encodeURIComponent(String(jdId || ''));
       const safeEmail = encodeURIComponent(emailKey);
-      const res = await fetch(`${apiBase}/test/proctoring/${safeJdId}/${safeEmail}`);
+      const noCache = forceRefresh ? `?t=${Date.now()}` : '';
+      const res = await fetch(`${apiBase}/test/proctoring/${safeJdId}/${safeEmail}${noCache}`);
       const data = await res.json();
       setViolationEventsMap(prev => ({ ...prev, [emailKey]: data.events || [] }));
+      setViolationSeverityMap(prev => ({ ...prev, [emailKey]: String(data.highest_severity || 'info').toLowerCase() }));
     } catch (err) {
       console.error('Error fetching violation events:', err);
       setViolationEventsMap(prev => ({ ...prev, [emailKey]: [] }));
+      setViolationSeverityMap(prev => ({ ...prev, [emailKey]: 'info' }));
     } finally {
       setLoadingViolations(prev => ({ ...prev, [emailKey]: false }));
     }
@@ -97,7 +101,12 @@ const AnalyseResults = ({ navigateTo }) => {
     return metrics;
   };
 
-  const getViolationSeverity = (statusValue) => {
+  const getViolationSeverity = (statusValue, highestSeverity = '') => {
+    const hs = String(highestSeverity || '').toLowerCase();
+    if (hs === 'critical') return { level: 'MAJOR', color: '#ef4444', bgColor: 'rgba(239,68,68,0.1)' };
+    if (hs === 'high') return { level: 'SUSPICIOUS', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
+    if (hs === 'medium' || hs === 'warning') return { level: 'MINOR', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
+
     const label = getStatusLabel(statusValue || '').toLowerCase();
     if (label === 'major violation') return { level: 'MAJOR', color: '#ef4444', bgColor: 'rgba(239,68,68,0.1)' };
     if (label === 'suspicious') return { level: 'SUSPICIOUS', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
@@ -342,7 +351,7 @@ const AnalyseResults = ({ navigateTo }) => {
                         if (violationDetailsCandidate?.Email === cand.Email) {
                           setViolationDetailsCandidate(null);
                         } else {
-                          await fetchViolationEvents(selectedJd, cand.Email);
+                          await fetchViolationEvents(selectedJd, cand.Email, true);
                           setViolationDetailsCandidate(cand);
                         }
                       }}
@@ -353,9 +362,9 @@ const AnalyseResults = ({ navigateTo }) => {
                         justifyContent: 'center',
                         padding: '12px 16px',
                         borderRadius: '10px',
-                        border: `2px solid ${getViolationSeverity(cand.test_status).color}`,
-                        background: getViolationSeverity(cand.test_status).bgColor,
-                        color: getViolationSeverity(cand.test_status).color,
+                        border: `2px solid ${getViolationSeverity(cand.test_status, violationSeverityMap[String(cand.Email || '').toLowerCase()]).color}`,
+                        background: getViolationSeverity(cand.test_status, violationSeverityMap[String(cand.Email || '').toLowerCase()]).bgColor,
+                        color: getViolationSeverity(cand.test_status, violationSeverityMap[String(cand.Email || '').toLowerCase()]).color,
                         cursor: 'pointer',
                         fontWeight: 700,
                         fontSize: '0.75rem',
@@ -364,7 +373,7 @@ const AnalyseResults = ({ navigateTo }) => {
                         textTransform: 'uppercase',
                         letterSpacing: '0.05em'
                       }}>
-                        {getViolationSeverity(cand.test_status).level}
+                        {getViolationSeverity(cand.test_status, violationSeverityMap[String(cand.Email || '').toLowerCase()]).level}
                       </button>
                   )}
                 </div>
@@ -416,11 +425,11 @@ const AnalyseResults = ({ navigateTo }) => {
                       No violation events recorded.
                     </div>
                   )}
-                  <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: `2px solid ${getViolationSeverity(cand.test_status).color}`, marginBottom: '16px' }}>
+                  <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: `2px solid ${getViolationSeverity(cand.test_status, violationSeverityMap[String(cand.Email || '').toLowerCase()]).color}`, marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                       <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Severity Level</span>
-                      <span style={{ fontSize: '1rem', fontWeight: 700, color: getViolationSeverity(cand.test_status).color, textTransform: 'uppercase' }}>
-                        {getViolationSeverity(cand.test_status).level}
+                      <span style={{ fontSize: '1rem', fontWeight: 700, color: getViolationSeverity(cand.test_status, violationSeverityMap[String(cand.Email || '').toLowerCase()]).color, textTransform: 'uppercase' }}>
+                        {getViolationSeverity(cand.test_status, violationSeverityMap[String(cand.Email || '').toLowerCase()]).level}
                       </span>
                     </div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>

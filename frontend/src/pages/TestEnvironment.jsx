@@ -156,6 +156,16 @@ const TestEnvironment = () => {
     if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+      canvas.width * BALANCED.centerXMin,
+      canvas.height * BALANCED.centerYMin,
+      canvas.width * (BALANCED.centerXMax - BALANCED.centerXMin),
+      canvas.height * (BALANCED.centerYMax - BALANCED.centerYMin)
+    );
+
     if (!pose?.keypoints?.length) return;
 
     const colors = { nose: '#ef4444', leftEye: '#10b981', rightEye: '#10b981', leftEar: '#3b82f6', rightEar: '#3b82f6' };
@@ -169,15 +179,6 @@ const TestEnvironment = () => {
       ctx.arc(x, y, 4, 0, Math.PI * 2);
       ctx.fill();
     }
-
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(
-      canvas.width * BALANCED.centerXMin,
-      canvas.height * BALANCED.centerYMin,
-      canvas.width * (BALANCED.centerXMax - BALANCED.centerXMin),
-      canvas.height * (BALANCED.centerYMax - BALANCED.centerYMin)
-    );
   };
 
   const registerFaceViolation = (eventType, severity, details) => {
