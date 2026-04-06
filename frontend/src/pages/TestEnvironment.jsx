@@ -50,6 +50,7 @@ const TestEnvironment = () => {
   const faceOffHighRaisedRef = useRef(false);
   const violationCooldownRef = useRef({});
   const directionHistoryRef = useRef([]);
+  const testStartAtRef = useRef(0);
 
   const [mcqAnswers, setMcqAnswers] = useState({});
   const [codingAnswers, setCodingAnswers] = useState({});
@@ -70,6 +71,7 @@ const TestEnvironment = () => {
   const VIOLATION_LIMIT = 3;
   const VIOLATION_SCORE_LIMIT = 12;
   const VIOLATION_COOLDOWN_MS = 8000;
+  const MOVEMENT_GRACE_MS = 6000;
   const DETECTION_FPS = 6;
   const DETECT_INTERVAL_MS = Math.floor(1000 / DETECTION_FPS);
   const GUIDE_BOX = isMobile
@@ -264,9 +266,8 @@ const TestEnvironment = () => {
     const rightInner = landmarks[362];
     const rightOuter = landmarks[263];
     const noseTip = landmarks[1];
-    const mouthTop = landmarks[13];
 
-    if (!leftOuter || !leftInner || !rightInner || !rightOuter || !noseTip || !mouthTop) return 'unknown';
+    if (!leftOuter || !leftInner || !rightInner || !rightOuter || !noseTip) return 'unknown';
 
     const leftEyeX = (leftOuter.x + leftInner.x) / 2;
     const rightEyeX = (rightOuter.x + rightInner.x) / 2;
@@ -276,13 +277,12 @@ const TestEnvironment = () => {
 
     const yaw = (noseTip.x - eyeCenterX) / eyeDistance;
     const pitch = (noseTip.y - eyeCenterY) / eyeDistance;
-    const mouthPitch = (mouthTop.y - eyeCenterY) / eyeDistance;
 
     // Camera preview is mirrored for users in many browsers, so map directions accordingly.
     if (yaw <= DIRECTION_THRESHOLDS.yawLeft) return 'right';
     if (yaw >= DIRECTION_THRESHOLDS.yawRight) return 'left';
     if (pitch <= DIRECTION_THRESHOLDS.pitchUp) return 'up';
-    if (pitch >= DIRECTION_THRESHOLDS.pitchDown || mouthPitch >= 1.4) return 'down';
+    if (pitch >= DIRECTION_THRESHOLDS.pitchDown) return 'down';
     return 'center';
   };
 
@@ -301,7 +301,18 @@ const TestEnvironment = () => {
     if (phase !== 'test') {
       eyesMissingSinceRef.current = 0;
       earsMissingSinceRef.current = 0;
+      testStartAtRef.current = 0;
+      directionHistoryRef.current = [];
+      latestDirectionRef.current = 'center';
+      offDirectionSinceRef.current = 0;
+      offDirectionRef.current = null;
+      faceOffMinorRaisedRef.current = false;
+      faceOffHighRaisedRef.current = false;
+      return;
     }
+    testStartAtRef.current = Date.now();
+    directionHistoryRef.current = [];
+    latestDirectionRef.current = 'center';
   }, [phase]);
 
   const getStableDirection = (rawDirection) => {
@@ -582,6 +593,8 @@ const TestEnvironment = () => {
       const insideGuide = isFaceInsideGuide(faceBox, guideRect, video);
       const rawDirection = getFaceDirectionFromLandmarks(primaryLandmarks);
       const direction = getStableDirection(rawDirection);
+      const boxDirection = classifyFaceDirection(faceBox, video);
+      const inMovementGrace = testStartAtRef.current > 0 && (Date.now() - testStartAtRef.current) < MOVEMENT_GRACE_MS;
 
       const leftEye = primaryLandmarks?.[33];
       const rightEye = primaryLandmarks?.[263];
@@ -612,10 +625,19 @@ const TestEnvironment = () => {
         earsMissingSinceRef.current = 0;
       }
 
-      if (!insideGuide || (direction !== 'center' && direction !== 'unknown')) {
-        const movementDirection = direction === 'unknown'
-          ? classifyFaceDirection(faceBox, video)
-          : direction;
+      let movementDirection = direction === 'unknown' ? boxDirection : direction;
+
+      // Facial expressions can change pitch landmarks; require position confirmation for vertical movement.
+      if ((movementDirection === 'up' || movementDirection === 'down') && boxDirection === 'center' && insideGuide) {
+        movementDirection = 'center';
+      }
+
+      // Ignore initial transient head motions immediately after test starts.
+      if (inMovementGrace && insideGuide) {
+        movementDirection = 'center';
+      }
+
+      if (!insideGuide || (movementDirection !== 'center' && movementDirection !== 'unknown')) {
 
         if (!offFrameSinceRef.current) offFrameSinceRef.current = Date.now();
         if (offDirectionRef.current !== movementDirection) {
