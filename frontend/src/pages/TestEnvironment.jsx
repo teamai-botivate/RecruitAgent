@@ -82,11 +82,11 @@ const TestEnvironment = () => {
       return {
         missingWarnMs: 4000,          // More lenient on mobile (shaky hands)
         missingMajorMs: 14000,
-        lookingAwayWarnMs: 8000,      // Higher tolerance for mobile head movement
+        lookingAwayWarnMs: 10000,     // Higher tolerance for mobile head movement
         lookingAwayMajorMs: 15000,
-        centerDeadzoneX: 0.35,        // Larger deadzone - mobile faces are bigger and move more
-        centerDeadzoneY: 0.35,
-        directionPersistMs: 3200,     // Longer persistence - ignore brief movements
+        centerDeadzoneX: 0.42,        // Larger deadzone - mobile faces are bigger and move more
+        centerDeadzoneY: 0.42,
+        directionPersistMs: 4500,     // Longer persistence - ignore brief movements
         minFaceRatio: 0.04,           // Allow slightly smaller faces (worse lighting)
         maxFaceRatio: 0.85,           // Allow much larger faces on mobile (closer to camera)
         framePaddingX: 0.14,          // More forgiveness at frame edges
@@ -98,11 +98,11 @@ const TestEnvironment = () => {
     return {
       missingWarnMs: 4000,
       missingMajorMs: 12000,
-      lookingAwayWarnMs: 6500,       // Increased to reduce false positives on brief movement
+      lookingAwayWarnMs: 9000,       // Increased to reduce false positives on brief movement
       lookingAwayMajorMs: 13000,
-      centerDeadzoneX: 0.30,         // More tolerance for small movement
-      centerDeadzoneY: 0.30,
-      directionPersistMs: 2800,      // Brief movements do not trigger direction violations
+      centerDeadzoneX: 0.38,         // More tolerance for small movement
+      centerDeadzoneY: 0.38,
+      directionPersistMs: 4000,      // Brief movements do not trigger direction violations
       minFaceRatio: 0.03,
       maxFaceRatio: 0.72,
       framePaddingX: 0.10,
@@ -112,10 +112,10 @@ const TestEnvironment = () => {
 
   const FACE_RULES = getFaceRules();
   const DIRECTION_THRESHOLDS = {
-    yawLeft: -0.22,
-    yawRight: 0.22,
-    pitchUp: -0.16,
-    pitchDown: 0.18,
+    yawLeft: -0.28,
+    yawRight: 0.28,
+    pitchUp: -0.22,
+    pitchDown: 0.24,
   };
   const VIOLATION_WEIGHTS = {
     tab_switch: 3,
@@ -307,7 +307,7 @@ const TestEnvironment = () => {
   const getStableDirection = (rawDirection) => {
     const history = directionHistoryRef.current;
     history.push(rawDirection);
-    if (history.length > 8) history.shift();
+    if (history.length > 10) history.shift();
 
     const scores = history.reduce((acc, dir) => {
       acc[dir] = (acc[dir] || 0) + 1;
@@ -323,7 +323,7 @@ const TestEnvironment = () => {
       }
     });
 
-    if (bestCount < 4) return latestDirectionRef.current || 'center';
+    if (bestCount < 5) return latestDirectionRef.current || 'center';
     latestDirectionRef.current = best;
     return best;
   };
