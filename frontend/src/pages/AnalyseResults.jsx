@@ -57,7 +57,7 @@ const AnalyseResults = ({ navigateTo }) => {
       const res = await fetch(`${apiBase}/test/proctoring/${safeJdId}/${safeEmail}?t=${Date.now()}`);
       const data = await res.json();
       const events = data.events || [];
-      const highest = String(data.highest_severity || getHighestSeverityFromEvents(events) || 'info').toLowerCase();
+      const highest = String(data.highest_severity || getHighestSeverityFromEvents(events) || 'info').trim().toLowerCase();
       setViolationEventsMap(prev => ({ ...prev, [emailKey]: events }));
       setViolationSeverityMap(prev => ({ ...prev, [emailKey]: highest }));
     } catch (err) {
@@ -119,11 +119,15 @@ const AnalyseResults = ({ navigateTo }) => {
 
   const getViolationSeverity = (statusValue, email) => {
     const emailKey = String(email || '').trim().toLowerCase();
-    const apiSeverity = String(violationSeverityMap[emailKey] || '').toLowerCase();
-    if (apiSeverity === 'critical') return { level: 'MAJOR', color: '#ef4444', bgColor: 'rgba(239,68,68,0.1)' };
-    if (apiSeverity === 'high') return { level: 'SUSPICIOUS', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
-    if (apiSeverity === 'medium' || apiSeverity === 'warning') return { level: 'MINOR', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
-    if (apiSeverity === 'info') return { level: 'NORMAL', color: '#10b981', bgColor: 'rgba(16,185,129,0.1)' };
+    const apiSeverity = String(violationSeverityMap[emailKey] || '').trim().toLowerCase();
+    const events = violationEventsMap[emailKey] || [];
+    const timelineSeverity = String(getHighestSeverityFromEvents(events) || '').trim().toLowerCase();
+    const effectiveSeverity = apiSeverity || timelineSeverity;
+
+    if (effectiveSeverity === 'critical') return { level: 'MAJOR', color: '#ef4444', bgColor: 'rgba(239,68,68,0.1)' };
+    if (effectiveSeverity === 'high') return { level: 'SUSPICIOUS', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
+    if (effectiveSeverity === 'medium' || effectiveSeverity === 'warning') return { level: 'MINOR', color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)' };
+    if (effectiveSeverity === 'info') return { level: 'NORMAL', color: '#10b981', bgColor: 'rgba(16,185,129,0.1)' };
 
     const label = getStatusLabel(statusValue || '').toLowerCase();
     if (label === 'major violation') return { level: 'MAJOR', color: '#ef4444', bgColor: 'rgba(239,68,68,0.1)' };
