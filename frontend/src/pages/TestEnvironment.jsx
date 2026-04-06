@@ -66,7 +66,7 @@ const TestEnvironment = () => {
     centerXMax: 0.70,
     centerYMin: 0.25,
     centerYMax: 0.75,
-    directionPersistSec: 2,
+    directionPersistSec: 1,
     faceCooldownMs: 5000,
     graceMs: 5000,
     noseConfidence: 0.55,
@@ -451,7 +451,7 @@ const TestEnvironment = () => {
         } finally {
           faceDetectBusyRef.current = false;
         }
-      }, 1000);
+      }, 300);
     };
 
     initPoseNet();
