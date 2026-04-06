@@ -69,44 +69,44 @@ const TestEnvironment = () => {
 
   const VIOLATION_LIMIT = 3;
   const VIOLATION_SCORE_LIMIT = 12;
-  const VIOLATION_COOLDOWN_MS = 5000;
-  const DETECTION_FPS = 8;
+  const VIOLATION_COOLDOWN_MS = 8000;
+  const DETECTION_FPS = 5;
   const DETECT_INTERVAL_MS = Math.floor(1000 / DETECTION_FPS);
   const GUIDE_BOX = isMobile
-    ? { x: 0.08, y: 0.06, width: 0.84, height: 0.88 }
-    : { x: 0.12, y: 0.08, width: 0.76, height: 0.82 };
+    ? { x: 0.05, y: 0.04, width: 0.90, height: 0.91 }
+    : { x: 0.08, y: 0.06, width: 0.84, height: 0.86 };
   
   // Mobile-specific and desktop face tracking rules
   const getFaceRules = () => {
     if (isMobile) {
       return {
         missingWarnMs: 4000,          // More lenient on mobile (shaky hands)
-        missingMajorMs: 12000,
-        lookingAwayWarnMs: 6000,      // Higher tolerance for mobile head movement
-        lookingAwayMajorMs: 12000,
+        missingMajorMs: 14000,
+        lookingAwayWarnMs: 8000,      // Higher tolerance for mobile head movement
+        lookingAwayMajorMs: 15000,
         centerDeadzoneX: 0.35,        // Larger deadzone - mobile faces are bigger and move more
         centerDeadzoneY: 0.35,
-        directionPersistMs: 2500,     // Longer persistence - ignore brief movements
+        directionPersistMs: 3200,     // Longer persistence - ignore brief movements
         minFaceRatio: 0.04,           // Allow slightly smaller faces (worse lighting)
         maxFaceRatio: 0.85,           // Allow much larger faces on mobile (closer to camera)
-        framePaddingX: 0.12,          // More forgiveness at frame edges
-        framePaddingY: 0.15,
+        framePaddingX: 0.14,          // More forgiveness at frame edges
+        framePaddingY: 0.16,
       };
     }
     
     // Desktop defaults - stricter
     return {
-      missingWarnMs: 3000,
-      missingMajorMs: 10000,
-      lookingAwayWarnMs: 5000,       // Increased from 4500 to reduce false positives
-      lookingAwayMajorMs: 10000,
-      centerDeadzoneX: 0.28,         // Increased from 0.18 to tolerate small movements
-      centerDeadzoneY: 0.28,
-      directionPersistMs: 2000,      // Increased from 1400 - brief movements don't trigger
+      missingWarnMs: 4000,
+      missingMajorMs: 12000,
+      lookingAwayWarnMs: 6500,       // Increased to reduce false positives on brief movement
+      lookingAwayMajorMs: 13000,
+      centerDeadzoneX: 0.30,         // More tolerance for small movement
+      centerDeadzoneY: 0.30,
+      directionPersistMs: 2800,      // Brief movements do not trigger direction violations
       minFaceRatio: 0.03,
       maxFaceRatio: 0.72,
-      framePaddingX: 0.08,
-      framePaddingY: 0.10,
+      framePaddingX: 0.10,
+      framePaddingY: 0.12,
     };
   };
 
@@ -307,7 +307,7 @@ const TestEnvironment = () => {
   const getStableDirection = (rawDirection) => {
     const history = directionHistoryRef.current;
     history.push(rawDirection);
-    if (history.length > 6) history.shift();
+    if (history.length > 8) history.shift();
 
     const scores = history.reduce((acc, dir) => {
       acc[dir] = (acc[dir] || 0) + 1;
@@ -323,7 +323,7 @@ const TestEnvironment = () => {
       }
     });
 
-    if (bestCount < 3) return latestDirectionRef.current || 'center';
+    if (bestCount < 4) return latestDirectionRef.current || 'center';
     latestDirectionRef.current = best;
     return best;
   };
@@ -1191,7 +1191,7 @@ const TestEnvironment = () => {
       
       {/* ── SIDEBAR (Responsive) ── */}
       <div className={`test-sidebar ${sidebarOpen ? 'open' : ''}`} style={{
-        width: isMobile ? '90vw' : (isMobile ? '100%' : '260px'),
+        width: isMobile ? '96vw' : (isMobile ? '100%' : '320px'),
         background: '#111827',
         borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.06)',
         display: 'flex',
@@ -1201,15 +1201,15 @@ const TestEnvironment = () => {
         zIndex: sidebarOpen && isMobile ? 100 : 10,
         transform: isMobile && !sidebarOpen ? 'translateX(-100%)' : 'translateX(0)',
         transition: 'transform 0.3s ease',
-        maxWidth: isMobile ? '90vw' : '260px',
+        maxWidth: isMobile ? '96vw' : '320px',
         left: 0,
       }}>
         
         {/* Camera */}
         <div style={{ padding: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ position: 'relative', width: '100%', aspectRatio: '4/3' }}>
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '4/3', minHeight: isMobile ? '230px' : '250px' }}>
             <video ref={videoRef} autoPlay muted playsInline
-              style={{ width: '100%', borderRadius: '8px', background: '#000', aspectRatio: '4/3', objectFit: 'cover' }} />
+              style={{ width: '100%', height: '100%', borderRadius: '8px', background: '#000', aspectRatio: '4/3', objectFit: 'cover' }} />
             <canvas
               ref={canvasRef}
               style={{
